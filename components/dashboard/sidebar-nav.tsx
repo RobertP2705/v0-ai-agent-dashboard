@@ -27,6 +27,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 
 const navItems = [
   { id: "overview", label: "Swarm Overview", icon: LayoutGrid },
+  { id: "research", label: "Research", icon: Activity },
   { id: "teams", label: "Teams", icon: Users },
   { id: "meeting", label: "Research Meeting Room", icon: MessageSquare },
   { id: "credits", label: "API Credits", icon: CreditCard },
@@ -35,9 +36,13 @@ const navItems = [
 interface SidebarNavProps {
   activeView: string
   onViewChange: (view: string) => void
+  /** Called after navigation (e.g. to close mobile sheet) */
+  onClose?: () => void
+  /** When true, sidebar fills container (e.g. inside mobile sheet) */
+  inSheet?: boolean
 }
 
-export function SidebarNav({ activeView, onViewChange }: SidebarNavProps) {
+export function SidebarNav({ activeView, onViewChange, onClose, inSheet }: SidebarNavProps) {
   const [user, setUser] = useState<User | null>(null)
   const router = useRouter()
 
@@ -59,7 +64,12 @@ export function SidebarNav({ activeView, onViewChange }: SidebarNavProps) {
   const userName = user?.user_metadata?.full_name as string | undefined
 
   return (
-    <aside className="flex h-full w-[240px] shrink-0 flex-col border-r border-border bg-sidebar">
+    <aside
+      className={cn(
+        "flex h-full flex-col bg-sidebar",
+        inSheet ? "w-full min-w-0" : "w-[240px] shrink-0 border-r border-border"
+      )}
+    >
       <div className="flex items-center gap-2 border-b border-border px-4 py-4">
         <div className="flex h-8 w-8 items-center justify-center rounded-md bg-primary">
           <Brain className="h-4 w-4 text-primary-foreground" />
@@ -84,7 +94,10 @@ export function SidebarNav({ activeView, onViewChange }: SidebarNavProps) {
           return (
             <button
               key={item.id}
-              onClick={() => onViewChange(item.id)}
+              onClick={() => {
+                onViewChange(item.id)
+                onClose?.()
+              }}
               className={cn(
                 "flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm transition-colors",
                 isActive
