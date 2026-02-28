@@ -1032,6 +1032,8 @@ export function ChatInterface({ fullscreen = false }: { fullscreen?: boolean }) 
           msg.summary = extractSummary(msg.events)
           if (event.task_id) msg.taskId = event.task_id
           updated[idx] = msg
+          // Push current events to StreamingContext for MeetingRoom
+          setStreamingState({ currentEvents: msg.events })
           return updated
         })
       },
@@ -1039,8 +1041,8 @@ export function ChatInterface({ fullscreen = false }: { fullscreen?: boolean }) 
         activeTaskIdRef.current = null
         activeTaskMsgIdRef.current = null
         setStreamStartTime(null)
-        setStreamingState({ isStreaming: false, activeAgents: [] })
         activeAgentsRef.current = new Set()
+        setStreamingState({ isStreaming: false, activeAgents: [] })
         setMessages((prev) => {
           const updated = [...prev]
           const idx = updated.findIndex((m) => m.id === taskMsg.id)
@@ -1061,8 +1063,8 @@ export function ChatInterface({ fullscreen = false }: { fullscreen?: boolean }) 
         activeTaskIdRef.current = null
         activeTaskMsgIdRef.current = null
         setStreamStartTime(null)
-        setStreamingState({ isStreaming: false, activeAgents: [] })
         activeAgentsRef.current = new Set()
+        setStreamingState({ isStreaming: false, activeAgents: [] })
         setMessages((prev) => {
           const updated = [...prev]
           const idx = updated.findIndex((m) => m.id === taskMsg.id)
@@ -1094,7 +1096,7 @@ export function ChatInterface({ fullscreen = false }: { fullscreen?: boolean }) 
     activeAgentsRef.current = new Set()
     setIsSubmitting(false)
     setStreamStartTime(null)
-    setStreamingState({ isStreaming: false, activeAgents: [] })
+    setStreamingState({ isStreaming: false, activeAgents: [], currentEvents: [] })
   }
 
   const handleClearHistory = () => {
@@ -1103,6 +1105,17 @@ export function ChatInterface({ fullscreen = false }: { fullscreen?: boolean }) 
     savedToMemoryRef.current = new Set()
     try { localStorage.removeItem(storageKey) } catch {}
   }
+
+  // Keep StreamingContext.currentEvents in sync with the latest task's events
+  // This ensures MeetingRoom can show events even when navigating after a task completes
+  useEffect(() => {
+    if (isSubmitting) return // don't overwrite during active stream
+    const latest = [...messages].reverse().find((m) => m.type === "task")
+    if (latest && latest.events.length > 0) {
+      setStreamingState({ currentEvents: latest.events })
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [messages.length])
 
   // Derive data for fullscreen top bar
   const latestTask = [...messages].reverse().find((m) => m.type === "task")
