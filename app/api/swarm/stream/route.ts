@@ -1,5 +1,7 @@
 import { NextRequest } from "next/server"
 
+export const maxDuration = 300
+
 const MODAL_URL = process.env.MODAL_ENDPOINT_URL || "http://localhost:8000"
 
 export async function POST(req: NextRequest) {
@@ -9,6 +11,7 @@ export async function POST(req: NextRequest) {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
+      signal: AbortSignal.timeout(5 * 60 * 1000),
     })
 
     if (!upstreamRes.ok || !upstreamRes.body) {

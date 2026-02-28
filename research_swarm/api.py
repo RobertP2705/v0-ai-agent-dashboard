@@ -90,11 +90,46 @@ async def get_agents() -> list[dict]:
             "name": defn["name"],
             "description": defn["description"],
             "tools": defn["tools"],
+            "scalable": True,
             "status": "busy" if aid in busy else "idle",
             "task": busy.get(aid, ""),
         }
         for aid, defn in AGENT_DEFINITIONS.items()
     ]
+
+
+class AgentScale(BaseModel):
+    agent_type: str
+    count: int
+
+
+@web_app.post("/teams/{team_id}/agents/scale")
+async def scale_agent_endpoint(team_id: str, body: AgentScale):
+    """Add or remove instances of an agent type to reach the desired count."""
+    if body.agent_type not in AGENT_DEFINITIONS:
+        raise HTTPException(400, f"Unknown agent type: {body.agent_type}")
+    if body.count < 0 or body.count > 10:
+        raise HTTPException(400, "Count must be between 0 and 10")
+
+    team = db.get_team(team_id)
+    if not team:
+        raise HTTPException(404, "Team not found")
+
+    existing = [
+        ta for ta in (team.get("team_agents") or [])
+        if ta["agent_type"] == body.agent_type
+    ]
+    current = len(existing)
+
+    if body.count > current:
+        for _ in range(body.count - current):
+            db.add_agent_to_team(team_id, body.agent_type)
+    elif body.count < current:
+        to_remove = existing[body.count:]
+        for ta in to_remove:
+            db.remove_agent_from_team(ta["id"])
+
+    return {"agent_type": body.agent_type, "previous": current, "current": body.count}
 
 
 # ── Teams CRUD ─────────────────────────────────────────────────────────────

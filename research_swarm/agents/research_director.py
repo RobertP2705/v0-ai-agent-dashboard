@@ -25,5 +25,5 @@ Guidelines:
 - Consider computational requirements, data availability, and potential impact.
 """
 
-    def __init__(self, model_remote, task_id: str | None = None):
-        super().__init__("research-director", model_remote, task_id=task_id)
+    def __init__(self, model_remote, task_id: str | None = None, instance_label: str | None = None):
+        super().__init__("research-director", model_remote, task_id=task_id, instance_label=instance_label)

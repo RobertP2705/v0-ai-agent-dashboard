@@ -50,13 +50,14 @@ vllm_image = (
     secrets=[modal.Secret.from_name("huggingface-secret")],
     scaledown_window=CONTAINER_IDLE_TIMEOUT,
     timeout=1800,
+    min_containers=1,
 )
 class Qwen3Model:
     """Serves Qwen3-32B via vLLM with chat completions."""
 
     @modal.enter()
     def load_model(self):
-        from vllm import LLM, SamplingParams  # noqa: F401
+        from vllm import LLM, SamplingParams
 
         self.llm = LLM(
             model=MODEL_ID,
@@ -65,6 +66,10 @@ class Qwen3Model:
             enforce_eager=True,
         )
         self.default_params = SamplingParams
+
+        warmup = [{"role": "user", "content": "ping"}]
+        self.llm.chat(warmup, sampling_params=SamplingParams(max_tokens=1))
+        print("Model loaded and warm.")
 
     @modal.method()
     def generate(
@@ -92,6 +97,9 @@ class Qwen3Model:
             chat_kwargs["tools"] = tools
 
         outputs = self.llm.chat(**chat_kwargs)
+        if not outputs or not outputs[0].outputs:
+            return {"content": "", "tool_calls": None, "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}}
+
         result = outputs[0]
         generated_text = result.outputs[0].text.strip()
 
@@ -100,13 +108,16 @@ class Qwen3Model:
 
         tool_calls = _extract_tool_calls(generated_text)
 
+        prompt_toks = len(result.prompt_token_ids) if result.prompt_token_ids else 0
+        completion_toks = len(result.outputs[0].token_ids) if result.outputs[0].token_ids else 0
+
         return {
             "content": generated_text if not tool_calls else None,
             "tool_calls": tool_calls,
             "usage": {
-                "prompt_tokens": len(result.prompt_token_ids),
-                "completion_tokens": len(result.outputs[0].token_ids),
-                "total_tokens": len(result.prompt_token_ids) + len(result.outputs[0].token_ids),
+                "prompt_tokens": prompt_toks,
+                "completion_tokens": completion_toks,
+                "total_tokens": prompt_toks + completion_toks,
             },
         }
 

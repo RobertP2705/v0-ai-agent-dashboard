@@ -20,6 +20,7 @@ export interface SwarmEvent {
   type: "thought" | "action" | "result" | "error" | "done"
   message: string
   timestamp: number
+  meta?: Record<string, unknown>
 }
 
 export interface SwarmTask {
@@ -43,6 +44,15 @@ export async function fetchTasks(): Promise<SwarmTask[]> {
   const res = await fetch("/api/swarm")
   if (!res.ok) throw new Error(`Failed to fetch tasks: ${res.status}`)
   return res.json()
+}
+
+export async function scaleAgent(teamId: string, agentType: string, count: number): Promise<void> {
+  const res = await fetch(`/api/agents/scale`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ team_id: teamId, agent_type: agentType, count }),
+  })
+  if (!res.ok) throw new Error(`Scale failed: ${res.status}`)
 }
 
 export async function cancelTask(taskId: string): Promise<void> {

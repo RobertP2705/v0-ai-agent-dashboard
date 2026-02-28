@@ -3,10 +3,10 @@
 import { useEffect, useState, useCallback } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { BookOpen, Terminal, Compass, FileText, FlaskConical, Signpost } from "lucide-react"
+import { BookOpen, Terminal, Compass, FileText, FlaskConical, Signpost, Plus, Minus, Users } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { supabaseConfigured, fetchDashboardStats, type DashboardStats } from "@/lib/supabase"
-import { fetchAgents, type SwarmAgent } from "@/lib/swarm-client"
+import { supabaseConfigured, fetchDashboardStats, fetchTeams, type DashboardStats, type Team } from "@/lib/supabase"
+import { fetchAgents, scaleAgent, type SwarmAgent } from "@/lib/swarm-client"
 import type { AgentStatus } from "@/lib/simulation-data"
 import { getStatusColor } from "@/lib/simulation-data"
 
@@ -34,9 +34,70 @@ function StatusDot({ status }: { status: AgentStatus }) {
   )
 }
 
+function InstanceCounter({
+  agentType,
+  count,
+  teamId,
+  onScaled,
+}: {
+  agentType: string
+  count: number
+  teamId: string
+  onScaled: () => void
+}) {
+  const [isLoading, setIsLoading] = useState(false)
+
+  const handleScale = async (newCount: number) => {
+    if (newCount < 1 || newCount > 10 || isLoading) return
+    setIsLoading(true)
+    try {
+      await scaleAgent(teamId, agentType, newCount)
+      onScaled()
+    } catch {
+      // ignore
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  return (
+    <div className="flex items-center gap-1">
+      <button
+        onClick={() => handleScale(count - 1)}
+        disabled={count <= 1 || isLoading}
+        className="flex h-5 w-5 items-center justify-center rounded border border-border bg-secondary text-foreground/60 transition-colors hover:bg-secondary/80 hover:text-foreground disabled:opacity-30 disabled:cursor-not-allowed"
+      >
+        <Minus className="h-2.5 w-2.5" />
+      </button>
+      <div className="flex items-center gap-1 px-1">
+        <Users className="h-3 w-3 text-muted-foreground" />
+        <span className="font-mono text-xs font-semibold tabular-nums w-3 text-center">{count}</span>
+      </div>
+      <button
+        onClick={() => handleScale(count + 1)}
+        disabled={count >= 10 || isLoading}
+        className="flex h-5 w-5 items-center justify-center rounded border border-border bg-secondary text-foreground/60 transition-colors hover:bg-secondary/80 hover:text-foreground disabled:opacity-30 disabled:cursor-not-allowed"
+      >
+        <Plus className="h-2.5 w-2.5" />
+      </button>
+    </div>
+  )
+}
+
 export function AgentStatusGrid() {
   const [agents, setAgents] = useState<SwarmAgent[]>([])
   const [stats, setStats] = useState<DashboardStats | null>(null)
+  const [teams, setTeams] = useState<Team[]>([])
+  const [selectedTeamId, setSelectedTeamId] = useState<string | null>(null)
+
+  const selectedTeam = teams.find((t) => t.id === selectedTeamId)
+
+  function getInstanceCount(agentType: string): number {
+    if (!selectedTeam?.team_agents) return 1
+    return selectedTeam.team_agents.filter(
+      (ta) => ta.agent_type === agentType && ta.enabled
+    ).length || 1
+  }
 
   const refresh = useCallback(async () => {
     try {
@@ -50,6 +111,11 @@ export function AgentStatusGrid() {
         setStats(await fetchDashboardStats())
       } catch {
         // keep null
+      }
+      try {
+        setTeams(await fetchTeams())
+      } catch {
+        // keep empty
       }
     }
   }, [])
@@ -69,35 +135,78 @@ export function AgentStatusGrid() {
           </Badge>
         </div>
       ) : (
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-        {agents.map((agent) => {
-          const Icon = agentIcons[agent.id] || BookOpen
-          return (
-            <Card key={agent.id} className="border-border bg-card/80 backdrop-blur-sm">
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <div className="flex items-center gap-2">
-                  <div className="flex h-7 w-7 items-center justify-center rounded-md bg-secondary">
-                    <Icon className="h-3.5 w-3.5 text-foreground" />
-                  </div>
-                  <CardTitle className="text-sm font-medium">{agent.name}</CardTitle>
-                </div>
-                <Badge
-                  variant="outline"
-                  className={cn("font-mono text-[10px] uppercase", getStatusColor(agent.status))}
-                >
-                  <StatusDot status={agent.status} />
-                  {agent.status}
-                </Badge>
-              </CardHeader>
-              <CardContent>
-                <p className="font-mono text-xs text-muted-foreground line-clamp-1">
-                  {agent.task || agent.description}
-                </p>
-              </CardContent>
-            </Card>
-          )
-        })}
-      </div>
+        <>
+          {teams.length > 0 && (
+            <div className="flex items-center gap-2">
+              <span className="font-mono text-[10px] text-muted-foreground">Team:</span>
+              <select
+                value={selectedTeamId ?? ""}
+                onChange={(e) => setSelectedTeamId(e.target.value || null)}
+                className="h-7 rounded border border-border bg-secondary px-2 font-mono text-[11px] text-foreground"
+              >
+                <option value="">Default (1 each)</option>
+                {teams.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name}
+                  </option>
+                ))}
+              </select>
+              {selectedTeam && (
+                <span className="font-mono text-[10px] text-muted-foreground">
+                  — scale agents with +/- buttons
+                </span>
+              )}
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+            {agents.map((agent) => {
+              const Icon = agentIcons[agent.id] || BookOpen
+              const count = getInstanceCount(agent.id)
+              return (
+                <Card key={agent.id} className="border-border bg-card/80 backdrop-blur-sm">
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <div className="flex items-center gap-2">
+                      <div className="flex h-7 w-7 items-center justify-center rounded-md bg-secondary">
+                        <Icon className="h-3.5 w-3.5 text-foreground" />
+                      </div>
+                      <div>
+                        <CardTitle className="text-sm font-medium">{agent.name}</CardTitle>
+                        {count > 1 && (
+                          <span className="font-mono text-[10px] text-muted-foreground">
+                            {count} instances
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {selectedTeam && (
+                        <InstanceCounter
+                          agentType={agent.id}
+                          count={count}
+                          teamId={selectedTeam.id}
+                          onScaled={refresh}
+                        />
+                      )}
+                      <Badge
+                        variant="outline"
+                        className={cn("font-mono text-[10px] uppercase", getStatusColor(agent.status))}
+                      >
+                        <StatusDot status={agent.status} />
+                        {agent.status}
+                      </Badge>
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    <p className="font-mono text-xs text-muted-foreground line-clamp-1">
+                      {agent.task || agent.description}
+                    </p>
+                  </CardContent>
+                </Card>
+              )
+            })}
+          </div>
+        </>
       )}
 
       {stats && (

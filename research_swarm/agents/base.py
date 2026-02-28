@@ -44,10 +44,10 @@ class BaseAgent:
     tool_names: list[str]
     max_iterations: int = 6
 
-    def __init__(self, agent_id: str, model_remote: Any, task_id: str | None = None):
+    def __init__(self, agent_id: str, model_remote: Any, task_id: str | None = None, instance_label: str | None = None):
         defn = AGENT_DEFINITIONS[agent_id]
         self.agent_id = agent_id
-        self.agent_name = defn["name"]
+        self.agent_name = instance_label or defn["name"]
         self.tool_names = defn["tools"]
         self.model = model_remote
         self.task_id = task_id
@@ -194,10 +194,26 @@ class BaseAgent:
                 self._check_cancelled()
                 fn_name = tc["function"]["name"]
                 fn_args = json.loads(tc["function"]["arguments"])
-                yield self._emit("action", f"Calling {fn_name}({json.dumps(fn_args, default=str)[:200]})")
+
+                summary = f"Calling {fn_name}({json.dumps(fn_args, default=str)[:120]})"
+                meta: dict[str, Any] = {"tool": fn_name, "args": fn_args}
+                if fn_name == "modal_sandbox":
+                    meta["code"] = fn_args.get("code", "")
+                    meta["requirements"] = fn_args.get("requirements", [])
+                    summary = f"Running sandbox ({len(meta['code'])} chars)"
+                yield self._emit("action", summary, **meta)
 
                 tool_result = self._call_tool(fn_name, fn_args)
-                yield self._emit("result", f"{fn_name} returned ({len(tool_result)} chars)")
+                result_meta: dict[str, Any] = {"tool": fn_name, "chars": len(tool_result)}
+                try:
+                    parsed = json.loads(tool_result)
+                    if fn_name == "modal_sandbox" and isinstance(parsed, dict):
+                        result_meta["exit_code"] = parsed.get("exit_code")
+                        result_meta["stdout"] = parsed.get("stdout", "")[:2000]
+                        result_meta["stderr"] = parsed.get("stderr", "")[:1000]
+                except (json.JSONDecodeError, TypeError):
+                    pass
+                yield self._emit("result", f"{fn_name} returned ({len(tool_result)} chars)", **result_meta)
 
                 messages.append({
                     "role": "tool",
