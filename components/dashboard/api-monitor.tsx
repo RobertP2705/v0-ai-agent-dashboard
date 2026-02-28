@@ -1,8 +1,11 @@
 "use client"
 
 import { useEffect, useState, useCallback } from "react"
+import useSWR from "swr"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { DollarSign, Zap, TrendingUp, ArrowUpRight } from "lucide-react"
+
+const fetcher = (url: string) => fetch(url).then((r) => r.json())
 
 interface ApiStats {
   totalTokens: number
@@ -12,27 +15,52 @@ interface ApiStats {
   requestsPerMin: number
 }
 
+const fallbackStats: ApiStats = {
+  totalTokens: 1247832,
+  inputTokens: 834221,
+  outputTokens: 413611,
+  estimatedCost: 18.72,
+  requestsPerMin: 24,
+}
+
 export function ApiMonitor() {
-  const [stats, setStats] = useState<ApiStats>({
-    totalTokens: 1247832,
-    inputTokens: 834221,
-    outputTokens: 413611,
-    estimatedCost: 18.72,
-    requestsPerMin: 24,
+  const { data: dbStats } = useSWR<ApiStats>("/api/api-stats", fetcher, {
+    refreshInterval: 5000,
+    fallbackData: undefined,
   })
+
+  const [stats, setStats] = useState<ApiStats>(fallbackStats)
+  const initializedRef = { current: false }
+
+  useEffect(() => {
+    if (dbStats && dbStats.totalTokens && !initializedRef.current) {
+      initializedRef.current = true
+      setStats(dbStats)
+    }
+  }, [dbStats])
 
   const updateStats = useCallback(() => {
     setStats((prev) => {
       const newInput = prev.inputTokens + Math.floor(Math.random() * 500)
       const newOutput = prev.outputTokens + Math.floor(Math.random() * 250)
-      return {
+      const updated = {
         totalTokens: newInput + newOutput,
         inputTokens: newInput,
         outputTokens: newOutput,
-        estimatedCost:
-          Number(((newInput + newOutput) * 0.000015).toFixed(2)),
+        estimatedCost: Number(((newInput + newOutput) * 0.000015).toFixed(2)),
         requestsPerMin: Math.floor(20 + Math.random() * 15),
       }
+
+      // Persist every 10 seconds worth of updates (every 5th call at 2s interval)
+      if (Math.random() < 0.2) {
+        fetch("/api/api-stats", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(updated),
+        }).catch(() => {})
+      }
+
+      return updated
     })
   }, [])
 

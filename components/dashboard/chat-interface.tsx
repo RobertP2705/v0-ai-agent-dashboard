@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect, useRef, useCallback } from "react"
+import useSWR from "swr"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import {
@@ -21,11 +22,9 @@ import {
 } from "lucide-react"
 import { StatusStepper } from "./status-stepper"
 import type { LogEntry, StepperStep } from "@/lib/simulation-data"
-import {
-  generateLogs,
-  generateSteps,
-  getAgentColor,
-} from "@/lib/simulation-data"
+import { generateLogs, generateSteps, getAgentColor } from "@/lib/simulation-data"
+
+const fetcher = (url: string) => fetch(url).then((r) => r.json())
 
 const typeIcons: Record<string, React.ElementType> = {
   thought: Lightbulb,
@@ -100,19 +99,48 @@ function LogItem({ entry, depth = 0 }: { entry: LogEntry; depth?: number }) {
 }
 
 export function ChatInterface() {
-  const [logs, setLogs] = useState<LogEntry[]>(generateLogs)
+  const { data: dbLogs } = useSWR("/api/chat-logs", fetcher, {
+    refreshInterval: 4000,
+    fallbackData: null,
+  })
+
+  const [localLogs, setLocalLogs] = useState<LogEntry[]>([])
   const [steps, setSteps] = useState<StepperStep[]>(generateSteps)
   const [inputValue, setInputValue] = useState("")
   const [isStreaming, setIsStreaming] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
+  const initializedRef = useRef(false)
+
+  // Merge DB logs with local streaming logs
+  useEffect(() => {
+    if (dbLogs && Array.isArray(dbLogs) && dbLogs.length > 0 && !initializedRef.current) {
+      initializedRef.current = true
+      const mapped: LogEntry[] = dbLogs.map((log: Record<string, unknown>) => ({
+        id: log.id as string,
+        timestamp: log.timestamp as string,
+        agent: log.agent as string,
+        type: log.type as LogEntry["type"],
+        message: log.message as string,
+        children: Array.isArray(log.children)
+          ? (log.children as Array<Record<string, unknown>>).map((c) => ({
+              id: c.id as string,
+              timestamp: c.timestamp as string,
+              agent: c.agent as string,
+              type: c.type as LogEntry["type"],
+              message: c.message as string,
+            }))
+          : undefined,
+      }))
+      setLocalLogs(mapped)
+    } else if (!dbLogs && !initializedRef.current) {
+      setLocalLogs(generateLogs())
+      initializedRef.current = true
+    }
+  }, [dbLogs])
 
   const addStreamingLog = useCallback(() => {
     const agents = ["Paper Finder", "Coder", "Tester"]
-    const types: ("thought" | "action" | "result")[] = [
-      "thought",
-      "action",
-      "result",
-    ]
+    const types: ("thought" | "action" | "result")[] = ["thought", "action", "result"]
     const messages = [
       "Evaluating relevance score for document batch #47...",
       "Parsing abstract with NER model for key concepts",
@@ -136,7 +164,14 @@ export function ChatInterface() {
       message: messages[Math.floor(Math.random() * messages.length)],
     }
 
-    setLogs((prev) => [...prev.slice(-30), newLog])
+    setLocalLogs((prev) => [...prev.slice(-30), newLog])
+
+    // Persist to Supabase in the background
+    fetch("/api/chat-logs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(newLog),
+    }).catch(() => {})
   }, [])
 
   useEffect(() => {
@@ -146,7 +181,6 @@ export function ChatInterface() {
   }, [addStreamingLog])
 
   useEffect(() => {
-    // Cycle steps over time
     const stepTimer = setInterval(() => {
       setSteps((prev) => {
         const activeIdx = prev.findIndex((s) => s.status === "active")
@@ -167,7 +201,7 @@ export function ChatInterface() {
     return () => clearInterval(stepTimer)
   }, [])
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!inputValue.trim()) return
     const userLog: LogEntry = {
@@ -182,8 +216,15 @@ export function ChatInterface() {
       type: "action",
       message: inputValue,
     }
-    setLogs((prev) => [...prev, userLog])
+    setLocalLogs((prev) => [...prev, userLog])
     setInputValue("")
+
+    // Persist to Supabase
+    fetch("/api/chat-logs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(userLog),
+    }).catch(() => {})
   }
 
   return (
@@ -208,7 +249,7 @@ export function ChatInterface() {
       <CardContent className="flex min-h-0 flex-1 flex-col p-0">
         <ScrollArea className="flex-1 p-3" ref={scrollRef}>
           <div className="space-y-1">
-            {logs.map((log) => (
+            {localLogs.map((log) => (
               <LogItem key={log.id} entry={log} />
             ))}
           </div>
@@ -227,6 +268,7 @@ export function ChatInterface() {
           <button
             type="submit"
             className="flex h-8 w-8 items-center justify-center rounded-md bg-primary text-primary-foreground transition-colors hover:bg-primary/80"
+            aria-label="Send command"
           >
             <Send className="h-3.5 w-3.5" />
           </button>

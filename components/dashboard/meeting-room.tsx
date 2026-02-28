@@ -1,11 +1,14 @@
 "use client"
 
 import { useEffect, useState, useRef, useCallback } from "react"
+import useSWR from "swr"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { cn } from "@/lib/utils"
 import { Mic, Volume2, Search, Code, FlaskConical } from "lucide-react"
+
+const fetcher = (url: string) => fetch(url).then((r) => r.json())
 
 const agentConfigs = [
   {
@@ -94,9 +97,7 @@ function WaveformVisualizer({
         const x = i * (barWidth + 1)
         const y = (h - barHeight) / 2
 
-        ctx.fillStyle = isActive
-          ? color
-          : "oklch(0.30 0.01 260)"
+        ctx.fillStyle = isActive ? color : "oklch(0.30 0.01 260)"
         ctx.globalAlpha = isActive ? 0.7 + amplitude * 0.3 : 0.4
         ctx.beginPath()
         ctx.roundRect(x, y, barWidth, barHeight, 1)
@@ -124,9 +125,30 @@ function WaveformVisualizer({
 }
 
 export function MeetingRoom() {
+  const { data: dbMessages } = useSWR("/api/meeting-messages", fetcher, {
+    refreshInterval: 5000,
+    fallbackData: null,
+  })
+
   const [activeAgent, setActiveAgent] = useState(0)
   const [messages, setMessages] = useState<MeetingMessage[]>([])
   const [messageIdx, setMessageIdx] = useState(0)
+  const initializedRef = useRef(false)
+
+  // Load initial messages from Supabase
+  useEffect(() => {
+    if (dbMessages && Array.isArray(dbMessages) && dbMessages.length > 0 && !initializedRef.current) {
+      initializedRef.current = true
+      setMessages(
+        dbMessages.map((m: Record<string, unknown>) => ({
+          id: m.id as string,
+          agent: m.agent as string,
+          message: m.message as string,
+          timestamp: m.timestamp as string,
+        }))
+      )
+    }
+  }, [dbMessages])
 
   const addMessage = useCallback(() => {
     const agentIndex = activeAgent % 3
@@ -147,9 +169,14 @@ export function MeetingRoom() {
 
     setMessages((prev) => [...prev.slice(-20), msg])
     setMessageIdx((prev) => prev + 1)
-
-    // Cycle to next agent after each message
     setActiveAgent((prev) => prev + 1)
+
+    // Persist to Supabase in the background
+    fetch("/api/meeting-messages", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(msg),
+    }).catch(() => {})
   }, [activeAgent, messageIdx])
 
   useEffect(() => {

@@ -1,11 +1,14 @@
 "use client"
 
 import { useEffect, useState, useCallback } from "react"
+import useSWR from "swr"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts"
 import { BarChart3, DollarSign, Coins } from "lucide-react"
 import type { TokenUsagePoint } from "@/lib/simulation-data"
 import { generateTokenUsage } from "@/lib/simulation-data"
+
+const fetcher = (url: string) => fetch(url).then((r) => r.json())
 
 function CustomTooltip({
   active,
@@ -30,10 +33,26 @@ function CustomTooltip({
 }
 
 export function TokenUsageChart() {
-  const [data, setData] = useState<TokenUsagePoint[]>(generateTokenUsage)
+  const { data: dbData } = useSWR<TokenUsagePoint[]>("/api/token-usage", fetcher, {
+    refreshInterval: 6000,
+    fallbackData: undefined,
+  })
+
+  const [data, setData] = useState<TokenUsagePoint[]>([])
+  const initializedRef = { current: false }
+
+  useEffect(() => {
+    if (dbData && Array.isArray(dbData) && dbData.length > 0 && !initializedRef.current) {
+      initializedRef.current = true
+      setData(dbData)
+    } else if (!dbData && data.length === 0) {
+      setData(generateTokenUsage())
+    }
+  }, [dbData, data.length])
 
   const updateData = useCallback(() => {
     setData((prev) => {
+      if (prev.length === 0) return prev
       const newPoint: TokenUsagePoint = {
         time: new Date().toLocaleTimeString("en-US", {
           hour12: false,
@@ -43,6 +62,14 @@ export function TokenUsageChart() {
         input: Math.floor(800 + Math.random() * 2400),
         output: Math.floor(400 + Math.random() * 1200),
       }
+
+      // Persist new data point to Supabase
+      fetch("/api/token-usage", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(newPoint),
+      }).catch(() => {})
+
       return [...prev.slice(1), newPoint]
     })
   }, [])
