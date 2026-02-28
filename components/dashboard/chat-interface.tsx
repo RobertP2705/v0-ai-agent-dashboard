@@ -503,6 +503,7 @@ function ToolCallCard({ event, resultEvent, autoExpand = false }: { event: LogEn
         <span className="flex-1 truncate text-foreground/80">{event.message}</span>
         <ChevronRight className={cn("h-3 w-3 shrink-0 text-muted-foreground transition-transform", expanded && "rotate-90")} />
       </button>
+
       {expanded && (
         <div className="pl-2">
           <div className="mt-1 rounded-md border border-border bg-card/60 p-2">

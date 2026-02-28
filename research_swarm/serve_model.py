@@ -1,8 +1,8 @@
 """
-vLLM inference server for Qwen3-32B on Modal.
+Local vLLM inference for research swarm on Modal.
 
-Deploys as a Modal class with an A100-80GB GPU, exposes a chat-completion
-generate method that the agent layer calls.  Auto-scales to zero when idle.
+Uses Qwen2.5-32B-Instruct (config.MODEL_ID): best open-weight for tool use
+on a single A100-80GB — 128K context, strong function calling.
 """
 
 from __future__ import annotations
@@ -10,15 +10,14 @@ from __future__ import annotations
 import modal
 
 from .config import (
-    MODEL_ID,
-    GPU_CONFIG,
-    GPU_COUNT,
     CONTAINER_IDLE_TIMEOUT,
-    MAX_CONCURRENT_INPUTS,
     MAX_MODEL_LEN,
+    MODEL_ID,
 )
 
 app = modal.App("research-swarm")
+
+# ── Local vLLM (Qwen2.5-32B or other HuggingFace model) ──────────────────────
 
 def _download_model():
     from huggingface_hub import snapshot_download
@@ -53,7 +52,7 @@ vllm_image = (
     min_containers=1,
 )
 class Qwen3Model:
-    """Serves Qwen3-32B via vLLM with chat completions."""
+    """Serves MODEL_ID (e.g. Qwen2.5-32B-Instruct) via vLLM with chat + tool calling."""
 
     @modal.enter()
     def load_model(self):
@@ -131,7 +130,7 @@ def _strip_think_tags(text: str) -> str:
 def _extract_tool_calls(text: str) -> list[dict] | None:
     """Parse tool-call blocks from model output.
 
-    Qwen3 emits tool calls as:
+    Qwen2.5 / Qwen3 emit tool calls as:
       <tool_call>{"name": "...", "arguments": {...}}</tool_call>
     """
     import json
