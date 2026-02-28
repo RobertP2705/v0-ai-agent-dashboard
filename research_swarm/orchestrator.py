@@ -1,14 +1,16 @@
-"""Swarm orchestrator -- triages queries, fans out to agents, persists to Supabase."""
+"""Swarm orchestrator -- triages queries, fans out to agents in parallel, merges results."""
 
 from __future__ import annotations
 
 import json
+import queue
+import threading
 import time
 from typing import Any, Generator
 
-from .agents.base import AgentEvent, AgentResult, CancelledError
+from .agents.base import AgentResult, CancelledError
 from .agents import AGENT_CLASSES
-from .config import TRIAGE_SYSTEM_PROMPT
+from .config import AGENT_DEFINITIONS, TRIAGE_SYSTEM_PROMPT
 from . import db
 
 
@@ -25,7 +27,7 @@ def run_research(
     model_remote: Any,
     team_id: str | None = None,
 ) -> Generator[dict, None, dict]:
-    """Full orchestration pipeline: triage -> fan-out -> merge.
+    """Full orchestration pipeline: triage -> parallel fan-out -> merge.
 
     Yields event dicts as they happen for SSE streaming.
     All state is persisted to Supabase.
@@ -33,7 +35,8 @@ def run_research(
     try:
         task_row = db.create_task(query=query, team_id=team_id)
     except Exception as exc:
-        yield _event("none", "system", "error", f"Database error: {exc}")
+        yield _event("none", "system", "error",
+                      f"Database error creating task: {exc}")
         return {}
 
     task_id = task_row["id"]
@@ -41,59 +44,85 @@ def run_research(
     db.update_task(task_id, {"status": "triaging"})
     yield _event(task_id, "system", "thought", f"Received query: {query}")
 
-    available_agents = _get_team_agents(team_id) if team_id else list(AGENT_CLASSES.keys())
+    agent_counts = _get_team_agent_counts(team_id)
 
-    yield _event(task_id, "system", "action", f"Routing query to model (agents: {', '.join(available_agents)})...")
+    counts_str = ", ".join(f"{a} x{c}" for a, c in agent_counts.items())
+    yield _event(task_id, "system", "action", f"Routing query to model ({counts_str})...")
+
     try:
-        routing = _triage(query, model_remote, available_agents)
+        routing = _triage(query, model_remote, agent_counts)
     except Exception as exc:
         yield _event(task_id, "system", "error", f"Triage failed: {exc}")
         db.update_task(task_id, {"status": "error"})
         return db.get_task(task_id) or {}
 
-    assigned = routing.get("agents", [available_agents[0]] if available_agents else ["paper-collector"])
-    sub_tasks = routing.get("sub_tasks", {})
+    roster = _build_roster(routing, agent_counts, query)
 
+    all_agent_ids = list({agent_id for agent_id, _, _ in roster})
     db.update_task(task_id, {
         "status": "running",
-        "assigned_agents": assigned,
+        "assigned_agents": all_agent_ids,
     })
 
-    yield _event(task_id, "system", "action", f"Routing to agents: {', '.join(assigned)}")
+    labels = [label for _, label, _ in roster]
+    yield _event(task_id, "system", "action", f"Launching {len(roster)} agent(s) in parallel: {', '.join(labels)}")
 
+    # ── Parallel fan-out ──────────────────────────────────────────────────
+    event_q: queue.Queue[dict | None] = queue.Queue()
     agent_results: dict[str, AgentResult] = {}
+    results_lock = threading.Lock()
 
-    for agent_id in assigned:
-        sub_task = sub_tasks.get(agent_id, query)
+    def _run_agent(agent_id: str, label: str, sub_task: str):
         agent_cls = AGENT_CLASSES.get(agent_id)
         if not agent_cls:
-            yield _event(task_id, "system", "error", f"Unknown agent: {agent_id}")
-            continue
+            event_q.put(_event(task_id, "system", "error", f"Unknown agent: {agent_id}"))
+            return
 
-        agent = agent_cls(model_remote, task_id=task_id)
-        yield _event(task_id, agent.agent_name, "thought", f"Starting: {sub_task}")
+        agent = agent_cls(model_remote, task_id=task_id, instance_label=label)
+        event_q.put(_event(task_id, label, "thought", f"Starting: {sub_task}"))
 
         try:
             gen = agent.run(sub_task)
             result = None
             try:
                 while True:
-                    event = next(gen)
-                    yield _event(task_id, event.agent_name, event.event_type, event.message)
+                    ev = next(gen)
+                    event_q.put(_event(task_id, ev.agent_name, ev.event_type, ev.message, ev.meta or None))
             except StopIteration as stop:
                 result = stop.value
 
             if result:
-                agent_results[agent_id] = result
+                with results_lock:
+                    agent_results[label] = result
                 if agent_id == "research-director" and result.answer:
                     _save_direction(task_id, result.answer)
         except CancelledError:
-            yield _event(task_id, agent.agent_name, "error", "Cancelled by user")
-            db.update_task(task_id, {"status": "cancelled"})
-            return db.get_task(task_id) or {}
+            event_q.put(_event(task_id, label, "error", "Cancelled by user"))
         except Exception as exc:
-            yield _event(task_id, agent.agent_name, "error", f"Agent failed: {exc}")
+            event_q.put(_event(task_id, label, "error", f"Agent failed: {exc}"))
 
+    threads = []
+    for agent_id, label, sub_task in roster:
+        t = threading.Thread(target=_run_agent, args=(agent_id, label, sub_task), daemon=True)
+        threads.append(t)
+        t.start()
+
+    while any(t.is_alive() for t in threads) or not event_q.empty():
+        try:
+            ev = event_q.get(timeout=0.15)
+            yield ev
+            if ev.get("type") == "error" and "Cancelled by user" in ev.get("message", ""):
+                db.update_task(task_id, {"status": "cancelled"})
+                while not event_q.empty():
+                    yield event_q.get()
+                return db.get_task(task_id) or {}
+        except queue.Empty:
+            continue
+
+    while not event_q.empty():
+        yield event_q.get()
+
+    # ── Merge ─────────────────────────────────────────────────────────────
     yield _event(task_id, "system", "action", "Synthesizing results...")
     try:
         merged = _merge_results(query, agent_results, model_remote)
@@ -116,20 +145,27 @@ def run_research(
     return db.get_task(task_id)
 
 
-def _get_team_agents(team_id: str) -> list[str]:
-    """Return agent type IDs enabled for a given team."""
+# ── Helpers ────────────────────────────────────────────────────────────────
+
+
+def _get_team_agent_counts(team_id: str | None) -> dict[str, int]:
+    """Return {agent_type: instance_count} for the team."""
+    if not team_id:
+        return {aid: 1 for aid in AGENT_CLASSES}
     team = db.get_team(team_id)
     if not team or not team.get("team_agents"):
-        return list(AGENT_CLASSES.keys())
-    return [
-        ta["agent_type"]
-        for ta in team["team_agents"]
-        if ta.get("enabled", True) and ta["agent_type"] in AGENT_CLASSES
-    ]
+        return {aid: 1 for aid in AGENT_CLASSES}
+    counts: dict[str, int] = {}
+    for ta in team["team_agents"]:
+        if ta.get("enabled", True) and ta["agent_type"] in AGENT_CLASSES:
+            counts[ta["agent_type"]] = counts.get(ta["agent_type"], 0) + 1
+    return counts if counts else {aid: 1 for aid in AGENT_CLASSES}
 
 
-def _triage(query: str, model_remote: Any, available_agents: list[str]) -> dict:
-    agent_list = "\n".join(f"- {aid}" for aid in available_agents)
+def _triage(query: str, model_remote: Any, agent_counts: dict[str, int]) -> dict:
+    agent_list = "\n".join(
+        f"- {aid} (x{count})" for aid, count in agent_counts.items()
+    )
     prompt = TRIAGE_SYSTEM_PROMPT + f"\n\nAvailable agents for this team:\n{agent_list}"
 
     response = model_remote.generate.remote(
@@ -138,7 +174,7 @@ def _triage(query: str, model_remote: Any, available_agents: list[str]) -> dict:
             {"role": "user", "content": query},
         ],
         temperature=0.3,
-        max_tokens=256,
+        max_tokens=512,
         enable_thinking=False,
     )
     text = response.get("content", "") or ""
@@ -146,12 +182,86 @@ def _triage(query: str, model_remote: Any, available_agents: list[str]) -> dict:
         start = text.index("{")
         end = text.rindex("}") + 1
         parsed = json.loads(text[start:end])
-        parsed["agents"] = [a for a in parsed.get("agents", []) if a in available_agents]
-        if not parsed["agents"]:
-            parsed["agents"] = [available_agents[0]]
-        return parsed
+        return _normalize_triage(parsed, agent_counts)
     except (ValueError, json.JSONDecodeError):
-        return {"agents": [available_agents[0]], "sub_tasks": {available_agents[0]: query}}
+        fallback_id = list(agent_counts.keys())[0]
+        return {"agents": {fallback_id: [query]}}
+
+
+def _normalize_triage(parsed: dict, agent_counts: dict[str, int]) -> dict:
+    """Accept both old-style and new-style triage output, normalize to new format.
+
+    New format: {"agents": {"agent-id": ["sub-task-1", ...], ...}}
+    Old format: {"agents": ["agent-id", ...], "sub_tasks": {"agent-id": "sub-task"}}
+    """
+    agents_field = parsed.get("agents", {})
+
+    if isinstance(agents_field, dict):
+        result: dict[str, list[str]] = {}
+        for aid, tasks in agents_field.items():
+            if aid not in agent_counts:
+                continue
+            if tasks is None:
+                tasks = [""]
+            elif isinstance(tasks, str):
+                tasks = [tasks]
+            elif not isinstance(tasks, list):
+                tasks = [str(tasks)]
+            result[aid] = [t if isinstance(t, str) else str(t) for t in tasks]
+        if not result:
+            fallback = list(agent_counts.keys())[0]
+            result = {fallback: [parsed.get("sub_tasks", {}).get(fallback, "")]}
+        return {"agents": result}
+
+    if isinstance(agents_field, list):
+        sub_tasks = parsed.get("sub_tasks", {}) or {}
+        result = {}
+        for aid in agents_field:
+            if not isinstance(aid, str) or aid not in agent_counts:
+                continue
+            st = sub_tasks.get(aid, "")
+            if st is None:
+                st = ""
+            result[aid] = [st] if isinstance(st, str) else [str(s) for s in st]
+        if not result:
+            fallback = list(agent_counts.keys())[0]
+            result = {fallback: [""]}
+        return {"agents": result}
+
+    fallback = list(agent_counts.keys())[0]
+    return {"agents": {fallback: [""]}}
+
+
+def _build_roster(
+    routing: dict, agent_counts: dict[str, int], query: str
+) -> list[tuple[str, str, str]]:
+    """Build a list of (agent_id, display_label, sub_task) tuples.
+
+    If a team has N instances of an agent type, spawn up to N instances,
+    each with a different sub-task from the triage output.
+    """
+    roster: list[tuple[str, str, str]] = []
+    agents_map = routing.get("agents", {})
+
+    for agent_id, sub_tasks in agents_map.items():
+        if agent_id not in AGENT_CLASSES:
+            continue
+        if not isinstance(sub_tasks, list):
+            sub_tasks = [str(sub_tasks)] if sub_tasks else [query]
+        if not sub_tasks:
+            sub_tasks = [query]
+        count = agent_counts.get(agent_id, 1)
+        base_name = AGENT_DEFINITIONS[agent_id]["name"]
+
+        while len(sub_tasks) < count:
+            sub_tasks.append(sub_tasks[-1] if sub_tasks else query)
+        sub_tasks = sub_tasks[:count]
+
+        for i, st in enumerate(sub_tasks):
+            label = f"{base_name} #{i + 1}" if count > 1 else base_name
+            roster.append((agent_id, label, st or query))
+
+    return roster
 
 
 def _merge_results(
@@ -163,8 +273,8 @@ def _merge_results(
         return next(iter(agent_results.values())).answer if agent_results else ""
 
     sections = []
-    for agent_id, result in agent_results.items():
-        sections.append(f"## {result.agent_name}\n{result.answer}")
+    for label, result in agent_results.items():
+        sections.append(f"## {label}\n{result.answer}")
 
     merge_prompt = (
         f"The user asked: {original_query}\n\n"
@@ -201,11 +311,14 @@ def _save_direction(task_id: str, answer: str):
         pass
 
 
-def _event(task_id: str, agent: str, event_type: str, message: str) -> dict:
-    return {
+def _event(task_id: str, agent: str, event_type: str, message: str, meta: dict | None = None) -> dict:
+    ev: dict[str, Any] = {
         "task_id": task_id,
         "agent": agent,
         "type": event_type,
         "message": message,
         "timestamp": time.time(),
     }
+    if meta:
+        ev["meta"] = meta
+    return ev
