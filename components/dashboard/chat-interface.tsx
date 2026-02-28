@@ -345,9 +345,21 @@ function CodeViewer({ code, language, stdout, stderr, exitCode }: {
           <span className="font-mono text-[9px]">{copied ? "Copied" : "Copy"}</span>
         </button>
       </div>
-      <pre className="overflow-auto p-2 font-mono text-[11px] text-foreground/80 leading-relaxed">
-        <code>{code}</code>
-      </pre>
+      <SyntaxHighlighter
+        language={language || "python"}
+        style={oneDark}
+        customStyle={{
+          margin: 0,
+          padding: "0.5rem",
+          fontSize: "11px",
+          lineHeight: "1.6",
+          background: "transparent",
+          borderRadius: 0,
+        }}
+        wrapLongLines
+      >
+        {code}
+      </SyntaxHighlighter>
       {(stdout || stderr) && (
         <div className="border-t border-border">
           {stdout && (
@@ -417,9 +429,23 @@ function SandboxCard({ event, resultEvent }: { event: LogEntry; resultEvent?: Lo
             <ChevronDown className={cn("h-2.5 w-2.5 text-muted-foreground transition-transform", !codeOpen && "-rotate-90")} />
           </CollapsibleTrigger>
           <CollapsibleContent>
-            <pre className="max-h-[300px] overflow-auto p-2 font-mono text-[11px] text-foreground/80 leading-relaxed bg-card/60">
-              <code>{code}</code>
-            </pre>
+            <div className="max-h-[300px] overflow-auto bg-card/60">
+              <SyntaxHighlighter
+                language="python"
+                style={oneDark}
+                customStyle={{
+                  margin: 0,
+                  padding: "0.5rem",
+                  fontSize: "11px",
+                  lineHeight: "1.6",
+                  background: "transparent",
+                  borderRadius: 0,
+                }}
+                wrapLongLines
+              >
+                {code}
+              </SyntaxHighlighter>
+            </div>
           </CollapsibleContent>
         </Collapsible>
       )}
