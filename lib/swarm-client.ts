@@ -108,6 +108,19 @@ export function streamResearch(
           }
         }
       }
+      // Process any remaining buffered data after stream closes
+      if (buffer.startsWith("data: ")) {
+        const data = buffer.slice(6).trim()
+        if (data === "[DONE]") {
+          onDone()
+          return
+        }
+        try {
+          onEvent(JSON.parse(data))
+        } catch {
+          // skip malformed
+        }
+      }
       onDone()
     })
     .catch((err) => {

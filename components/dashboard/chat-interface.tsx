@@ -1,8 +1,10 @@
 "use client"
 
-import { useState, useEffect, useRef, useMemo } from "react"
+import { useState, useEffect, useRef, useMemo, useCallback } from "react"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
+import { Prism as SyntaxHighlighter } from "react-syntax-highlighter"
+import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable"
@@ -46,6 +48,7 @@ import {
   type Team,
 } from "@/lib/supabase"
 import { createClient as createSupabaseClient } from "@/lib/supabase/client"
+import { useStreaming } from "@/lib/streaming-context"
 import {
   Select,
   SelectContent,
@@ -220,6 +223,48 @@ function persistMessages(msgs: ChatMessage[], storageKey: string) {
   } catch { /* storage full */ }
 }
 
+// ── Markdown code block with copy + syntax highlighting ──────────────────
+
+function MarkdownCodeBlock({ language, children }: { language?: string; children: string }) {
+  const [copied, setCopied] = useState(false)
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(children)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
+  return (
+    <div className="my-2 rounded-md border border-border overflow-hidden">
+      <div className="flex items-center justify-between bg-secondary/80 px-3 py-1">
+        <span className="font-mono text-[10px] text-muted-foreground">{language || "code"}</span>
+        <button
+          onClick={handleCopy}
+          className="flex items-center gap-1 text-muted-foreground hover:text-foreground transition-colors"
+        >
+          {copied ? <Check className="h-3 w-3 text-success" /> : <Copy className="h-3 w-3" />}
+          <span className="font-mono text-[9px]">{copied ? "Copied" : "Copy"}</span>
+        </button>
+      </div>
+      <SyntaxHighlighter
+        language={language || "text"}
+        style={oneDark}
+        customStyle={{
+          margin: 0,
+          padding: "0.75rem",
+          fontSize: "11px",
+          lineHeight: "1.6",
+          background: "oklch(0.16 0.007 260 / 0.8)",
+          borderRadius: 0,
+        }}
+        wrapLongLines
+      >
+        {children}
+      </SyntaxHighlighter>
+    </div>
+  )
+}
+
 // ── Markdown ──────────────────────────────────────────────────────────────
 
 function Md({ children }: { children: string }) {
@@ -233,13 +278,33 @@ function Md({ children }: { children: string }) {
       prose-strong:text-foreground prose-strong:font-semibold
       prose-em:text-foreground/70
       prose-code:text-[11px] prose-code:bg-secondary prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-code:text-primary
-      prose-pre:bg-secondary/80 prose-pre:rounded-md prose-pre:text-[11px] prose-pre:my-2
+      prose-pre:bg-transparent prose-pre:p-0 prose-pre:my-0
       prose-a:text-primary prose-a:underline prose-a:underline-offset-2
       prose-blockquote:border-l-primary/40 prose-blockquote:text-foreground/60 prose-blockquote:text-xs
       prose-hr:border-border prose-hr:my-2
       prose-table:text-xs prose-th:text-foreground prose-td:text-foreground/80
     ">
-      <ReactMarkdown remarkPlugins={[remarkGfm]}>{children}</ReactMarkdown>
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={{
+          pre({ children }) {
+            return <>{children}</>
+          },
+          code({ className, children, ...props }) {
+            const match = /language-(\w+)/.exec(className || "")
+            const codeStr = String(children).replace(/\n$/, "")
+            if (match) {
+              return <MarkdownCodeBlock language={match[1]}>{codeStr}</MarkdownCodeBlock>
+            }
+            if (codeStr.includes("\n")) {
+              return <MarkdownCodeBlock>{codeStr}</MarkdownCodeBlock>
+            }
+            return <code className={className} {...props}>{children}</code>
+          },
+        }}
+      >
+        {children}
+      </ReactMarkdown>
     </div>
   )
 }
@@ -718,6 +783,8 @@ function LiveStats({ eventCount, agentCount, startTime }: { eventCount: number; 
 
 // ── Main component ────────────────────────────────────────────────────────
 
+let nextMsgId = 0
+
 export function ChatInterface({ fullscreen = false }: { fullscreen?: boolean }) {
   const [userId, setUserId] = useState<string | null | undefined>(undefined)
   const [messages, setMessages] = useState<ChatMessage[]>([])
@@ -734,8 +801,28 @@ export function ChatInterface({ fullscreen = false }: { fullscreen?: boolean }) 
   const savedToMemoryRef = useRef<Set<string>>(new Set())
   const [memoryEnabled, setMemoryEnabled] = useState(false)
   const [streamStartTime, setStreamStartTime] = useState<number | null>(null)
+  const { setStreamingState } = useStreaming()
+  const activeAgentsRef = useRef<Set<string>>(new Set())
 
   const storageKey = getStorageKey(userId ?? null)
+
+  const updateStreamingAgents = useCallback((events: LogEntry[]) => {
+    const agents = new Set<string>()
+    for (const e of events) {
+      if (e.agent && e.agent !== "system" && e.agent !== "User") {
+        agents.add(e.agent)
+      }
+    }
+    const agentIds: string[] = []
+    agents.forEach((a) => {
+      const id = a.replace(/ #\d+$/, "").toLowerCase().replace(/\s+/g, "-")
+      agentIds.push(id)
+    })
+    if (agentIds.join(",") !== [...activeAgentsRef.current].join(",")) {
+      activeAgentsRef.current = new Set(agentIds)
+      setStreamingState({ isStreaming: true, activeAgents: agentIds })
+    }
+  }, [setStreamingState])
 
   useEffect(() => {
     fetch("/api/memory/status")
@@ -764,6 +851,9 @@ export function ChatInterface({ fullscreen = false }: { fullscreen?: boolean }) 
     const key = getStorageKey(userId)
     const stored = loadPersistedMessages(key)
     if (stored.length > 0) {
+      for (const m of stored) {
+        if (m.memorySaved) savedToMemoryRef.current.add(m.id)
+      }
       setMessages(stored)
       return
     }
@@ -797,7 +887,7 @@ export function ChatInterface({ fullscreen = false }: { fullscreen?: boolean }) 
   useEffect(() => {
     if (userId === undefined || !userId) return
     for (const m of messages) {
-      if (m.type !== "task" || m.status !== "completed" || savedToMemoryRef.current.has(m.id)) continue
+      if (m.type !== "task" || m.status !== "completed" || m.memorySaved || savedToMemoryRef.current.has(m.id)) continue
       const summary = m.summary?.trim() || ""
       if (!summary && !m.query?.trim()) continue
       savedToMemoryRef.current.add(m.id)
@@ -828,8 +918,9 @@ export function ChatInterface({ fullscreen = false }: { fullscreen?: boolean }) 
     if (!inputValue.trim() || isSubmitting) return
     const query = inputValue.trim()
     const now = formatTime()
-    const userMsg: ChatMessage = { id: `user-${Date.now()}`, type: "user", query, status: "completed", summary: "", events: [], timestamp: now }
-    const taskMsg: ChatMessage = { id: `task-${Date.now()}`, type: "task", query, status: "streaming", summary: "", events: [], timestamp: now }
+    const seq = ++nextMsgId
+    const userMsg: ChatMessage = { id: `user-${Date.now()}-${seq}`, type: "user", query, status: "completed", summary: "", events: [], timestamp: now }
+    const taskMsg: ChatMessage = { id: `task-${Date.now()}-${seq}`, type: "task", query, status: "streaming", summary: "", events: [], timestamp: now }
     setMessages((prev) => [...prev, userMsg, taskMsg])
     setInputValue("")
     setIsSubmitting(true)
@@ -837,6 +928,8 @@ export function ChatInterface({ fullscreen = false }: { fullscreen?: boolean }) 
     abortRef.current?.abort()
     activeTaskIdRef.current = null
     activeTaskMsgIdRef.current = taskMsg.id
+    activeAgentsRef.current = new Set()
+    setStreamingState({ isStreaming: true, activeAgents: [] })
     abortRef.current = streamResearch(
       query,
       (event) => {
@@ -851,13 +944,19 @@ export function ChatInterface({ fullscreen = false }: { fullscreen?: boolean }) 
           msg.summary = extractSummary(msg.events)
           if (event.task_id) msg.taskId = event.task_id
           updated[idx] = msg
+          updateStreamingAgents(msg.events)
           return updated
         })
       },
       () => {
-        activeTaskIdRef.current = null; activeTaskMsgIdRef.current = null; setStreamStartTime(null)
+        activeTaskIdRef.current = null
+        activeTaskMsgIdRef.current = null
+        setStreamStartTime(null)
+        setStreamingState({ isStreaming: false, activeAgents: [] })
+        activeAgentsRef.current = new Set()
         setMessages((prev) => {
-          const updated = [...prev]; const idx = updated.findIndex((m) => m.id === taskMsg.id)
+          const updated = [...prev]
+          const idx = updated.findIndex((m) => m.id === taskMsg.id)
           if (idx === -1) return prev
           const msg = updated[idx]
           const hasResult = msg.events.some((e) => e.type === "result")
@@ -872,11 +971,17 @@ export function ChatInterface({ fullscreen = false }: { fullscreen?: boolean }) 
         setIsSubmitting(false)
       },
       (err) => {
-        activeTaskIdRef.current = null; activeTaskMsgIdRef.current = null; setStreamStartTime(null)
+        activeTaskIdRef.current = null
+        activeTaskMsgIdRef.current = null
+        setStreamStartTime(null)
+        setStreamingState({ isStreaming: false, activeAgents: [] })
+        activeAgentsRef.current = new Set()
         setMessages((prev) => {
-          const updated = [...prev]; const idx = updated.findIndex((m) => m.id === taskMsg.id)
+          const updated = [...prev]
+          const idx = updated.findIndex((m) => m.id === taskMsg.id)
           if (idx === -1) return prev
-          updated[idx] = { ...updated[idx], status: "error", summary: `Error: ${err.message}` }; return updated
+          updated[idx] = { ...updated[idx], status: "error", summary: `Error: ${err.message}` }
+          return updated
         })
         setIsSubmitting(false)
       },
@@ -885,16 +990,24 @@ export function ChatInterface({ fullscreen = false }: { fullscreen?: boolean }) 
   }
 
   const handleCancel = async () => {
-    abortRef.current?.abort(); abortRef.current = null
+    abortRef.current?.abort()
+    abortRef.current = null
     if (activeTaskIdRef.current) cancelTask(activeTaskIdRef.current).catch(() => {})
     if (activeTaskMsgIdRef.current) {
       setMessages((prev) => {
-        const updated = [...prev]; const idx = updated.findIndex((m) => m.id === activeTaskMsgIdRef.current)
+        const updated = [...prev]
+        const idx = updated.findIndex((m) => m.id === activeTaskMsgIdRef.current)
         if (idx === -1) return prev
-        updated[idx] = { ...updated[idx], status: "error", summary: "Cancelled by user" }; return updated
+        updated[idx] = { ...updated[idx], status: "error", summary: "Cancelled by user" }
+        return updated
       })
     }
-    activeTaskIdRef.current = null; activeTaskMsgIdRef.current = null; setIsSubmitting(false); setStreamStartTime(null)
+    activeTaskIdRef.current = null
+    activeTaskMsgIdRef.current = null
+    activeAgentsRef.current = new Set()
+    setIsSubmitting(false)
+    setStreamStartTime(null)
+    setStreamingState({ isStreaming: false, activeAgents: [] })
   }
 
   // Derive data for fullscreen top bar

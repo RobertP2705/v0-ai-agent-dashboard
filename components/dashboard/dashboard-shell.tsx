@@ -10,6 +10,8 @@ import { ChatInterface } from "@/components/dashboard/chat-interface"
 import { MeetingRoom } from "@/components/dashboard/meeting-room"
 import { ApiCreditsView } from "@/components/dashboard/api-credits-view"
 import { TeamsView } from "@/components/dashboard/teams-view"
+import { PapersView } from "@/components/dashboard/papers-view"
+import { StreamingProvider } from "@/lib/streaming-context"
 import { useIsMobile } from "@/components/ui/use-mobile"
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet"
 import { Button } from "@/components/ui/button"
@@ -43,6 +45,7 @@ export function DashboardShell() {
   )
 
   return (
+    <StreamingProvider>
     <div className="flex h-dvh w-full overflow-hidden">
       {!isMobile && sidebarContent}
 
@@ -73,6 +76,7 @@ export function DashboardShell() {
               <h2 className="truncate text-sm font-semibold text-foreground">
                 {activeView === "overview" && "Swarm Overview"}
                 {activeView === "research" && "Research Console"}
+                {activeView === "papers" && "Papers Library"}
                 {activeView === "teams" && "Research Teams"}
                 {activeView === "meeting" && "Research Meeting Room"}
                 {activeView === "credits" && "API Credits"}
@@ -82,6 +86,8 @@ export function DashboardShell() {
                   "Real-time agent monitoring and research console"}
                 {activeView === "research" &&
                   "Full-screen research console with live agent monitoring"}
+                {activeView === "papers" &&
+                  "Browse and search collected research papers"}
                 {activeView === "teams" &&
                   "Create teams and assign specialized research agents"}
                 {activeView === "meeting" &&
@@ -116,12 +122,14 @@ export function DashboardShell() {
               <ChatInterface fullscreen />
             </div>
           )}
+          {activeView === "papers" && <PapersView />}
           {activeView === "teams" && <TeamsView />}
           {activeView === "meeting" && <MeetingRoom />}
           {activeView === "credits" && <ApiCreditsView userEmail={user?.email} />}
         </div>
       </main>
     </div>
+    </StreamingProvider>
   )
 }
 
