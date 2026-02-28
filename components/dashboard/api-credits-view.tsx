@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { DollarSign, Key, Webhook, ExternalLink } from "lucide-react"
+import { DollarSign, Key, Webhook, ExternalLink, User } from "lucide-react"
 import {
   supabaseConfigured,
   fetchDashboardStats,
@@ -12,7 +12,11 @@ import {
 
 const COST_PER_TOKEN = 0.000015
 
-export function ApiCreditsView() {
+interface ApiCreditsViewProps {
+  userEmail?: string
+}
+
+export function ApiCreditsView({ userEmail }: ApiCreditsViewProps) {
   const [stats, setStats] = useState<DashboardStats | null>(null)
 
   const refresh = useCallback(async () => {
@@ -34,6 +38,24 @@ export function ApiCreditsView() {
 
   return (
     <div className="flex flex-col gap-4">
+      {userEmail && (
+        <Card className="border-border bg-card/80 backdrop-blur-sm">
+          <CardContent className="flex items-center gap-3 py-3">
+            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary">
+              <User className="h-4 w-4 text-primary-foreground" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-xs font-medium text-foreground">Account</p>
+              <p className="truncate font-mono text-[10px] text-muted-foreground">
+                {userEmail}
+              </p>
+            </div>
+            <Badge variant="outline" className="border-success/30 bg-success/10 font-mono text-[10px] text-success">
+              authenticated
+            </Badge>
+          </CardContent>
+        </Card>
+      )}
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
         <Card className="border-border bg-card/80 backdrop-blur-sm">
           <CardHeader className="pb-2">

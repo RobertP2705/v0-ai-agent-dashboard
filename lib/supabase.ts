@@ -1,17 +1,14 @@
-import { createClient, SupabaseClient } from "@supabase/supabase-js"
+import { createClient as createBrowserClient } from "@/lib/supabase/client"
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? ""
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? ""
 
 export const supabaseConfigured = !!(supabaseUrl && supabaseAnonKey)
 
-export const supabase: SupabaseClient = supabaseConfigured
-  ? createClient(supabaseUrl, supabaseAnonKey)
-  : (new Proxy({} as SupabaseClient, {
-      get: () => () => {
-        throw new Error("Supabase is not configured. Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY in .env.local")
-      },
-    }))
+// Use the SSR-aware browser client so RLS policies work with the logged-in user's session
+function getSupabase() {
+  return createBrowserClient()
+}
 
 // ── Types matching the Supabase schema ──────────────────────────────────
 
@@ -20,6 +17,7 @@ export interface Team {
   name: string
   description: string
   created_at: string
+  user_id?: string
   team_agents?: TeamAgent[]
 }
 
@@ -70,6 +68,7 @@ export interface ResearchDirection {
 // ── Team CRUD (direct Supabase from client) ─────────────────────────────
 
 export async function fetchTeams(): Promise<Team[]> {
+  const supabase = getSupabase()
   const { data, error } = await supabase
     .from("teams")
     .select("*, team_agents(*)")
@@ -79,9 +78,14 @@ export async function fetchTeams(): Promise<Team[]> {
 }
 
 export async function createTeam(name: string, description = ""): Promise<Team> {
+  const supabase = getSupabase()
+  // Get the current user's ID to associate the team with them
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) throw new Error("Not authenticated")
+
   const { data, error } = await supabase
     .from("teams")
-    .insert({ name, description })
+    .insert({ name, description, user_id: user.id })
     .select()
     .single()
   if (error) throw error
@@ -89,6 +93,7 @@ export async function createTeam(name: string, description = ""): Promise<Team> 
 }
 
 export async function updateTeam(id: string, updates: Partial<Pick<Team, "name" | "description">>): Promise<Team> {
+  const supabase = getSupabase()
   const { data, error } = await supabase
     .from("teams")
     .update(updates)
@@ -100,11 +105,13 @@ export async function updateTeam(id: string, updates: Partial<Pick<Team, "name" 
 }
 
 export async function deleteTeam(id: string): Promise<void> {
+  const supabase = getSupabase()
   const { error } = await supabase.from("teams").delete().eq("id", id)
   if (error) throw error
 }
 
 export async function addAgentToTeam(teamId: string, agentType: string): Promise<TeamAgent> {
+  const supabase = getSupabase()
   const { data, error } = await supabase
     .from("team_agents")
     .insert({ team_id: teamId, agent_type: agentType, config: {}, enabled: true })
@@ -115,11 +122,13 @@ export async function addAgentToTeam(teamId: string, agentType: string): Promise
 }
 
 export async function removeAgentFromTeam(agentRowId: string): Promise<void> {
+  const supabase = getSupabase()
   const { error } = await supabase.from("team_agents").delete().eq("id", agentRowId)
   if (error) throw error
 }
 
 export async function toggleAgentInTeam(agentRowId: string, enabled: boolean): Promise<void> {
+  const supabase = getSupabase()
   const { error } = await supabase
     .from("team_agents")
     .update({ enabled })
@@ -151,6 +160,7 @@ export interface TaskEventRow {
 }
 
 export async function fetchTasks(limit = 50): Promise<TaskRow[]> {
+  const supabase = getSupabase()
   const { data, error } = await supabase
     .from("tasks")
     .select("*")
@@ -161,6 +171,7 @@ export async function fetchTasks(limit = 50): Promise<TaskRow[]> {
 }
 
 export async function fetchTaskEvents(taskId: string): Promise<TaskEventRow[]> {
+  const supabase = getSupabase()
   const { data, error } = await supabase
     .from("task_events")
     .select("*")
@@ -171,6 +182,7 @@ export async function fetchTaskEvents(taskId: string): Promise<TaskEventRow[]> {
 }
 
 export async function fetchAllEvents(limit = 200): Promise<TaskEventRow[]> {
+  const supabase = getSupabase()
   const { data, error } = await supabase
     .from("task_events")
     .select("*")
@@ -181,6 +193,7 @@ export async function fetchAllEvents(limit = 200): Promise<TaskEventRow[]> {
 }
 
 export async function fetchPapers(limit = 50): Promise<Paper[]> {
+  const supabase = getSupabase()
   const { data, error } = await supabase
     .from("papers")
     .select("*")
@@ -191,6 +204,7 @@ export async function fetchPapers(limit = 50): Promise<Paper[]> {
 }
 
 export async function fetchExperiments(limit = 50): Promise<Experiment[]> {
+  const supabase = getSupabase()
   const { data, error } = await supabase
     .from("experiments")
     .select("*")
@@ -201,6 +215,7 @@ export async function fetchExperiments(limit = 50): Promise<Experiment[]> {
 }
 
 export async function fetchDirections(limit = 50): Promise<ResearchDirection[]> {
+  const supabase = getSupabase()
   const { data, error } = await supabase
     .from("research_directions")
     .select("*")
@@ -222,6 +237,7 @@ export interface DashboardStats {
 }
 
 export async function fetchDashboardStats(): Promise<DashboardStats> {
+  const supabase = getSupabase()
   const [tasks, papers, experiments, directions] = await Promise.all([
     supabase.from("tasks").select("status, total_usage"),
     supabase.from("papers").select("id", { count: "exact", head: true }),
