@@ -6,12 +6,34 @@ experiments, and research directions.
 
 from __future__ import annotations
 
+import base64
+import json
 import os
 from typing import Any
 
 
 class DBError(RuntimeError):
     """Raised when a Supabase operation returns no data unexpectedly."""
+
+
+def _validate_service_role_key(key: str):
+    """Raise early if the key is clearly not a service_role JWT."""
+    try:
+        payload = key.split(".")[1]
+        payload += "=" * (4 - len(payload) % 4)
+        claims = json.loads(base64.urlsafe_b64decode(payload))
+        role = claims.get("role", "")
+        if role and role != "service_role":
+            raise DBError(
+                f"SUPABASE_SERVICE_ROLE_KEY has role='{role}' — expected 'service_role'. "
+                "You likely set the anon key by mistake. "
+                "Go to Supabase → Settings → API and copy the service_role key "
+                "into your Modal secret."
+            )
+    except DBError:
+        raise
+    except Exception:
+        pass
 
 
 def _get_client():
@@ -23,7 +45,10 @@ def _get_client():
             "SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY not set in environment. "
             "Check your Modal secrets."
         )
-    return create_client(url, key)
+    _validate_service_role_key(key)
+    client = create_client(url, key)
+    client.postgrest.auth(key)
+    return client
 
 
 def _first(result, table: str, op: str = "operation") -> dict:
