@@ -6,6 +6,7 @@ export interface LogEntry {
   agent: string
   type: "thought" | "action" | "result" | "error"
   message: string
+  meta?: Record<string, unknown>
   children?: LogEntry[]
 }
 
@@ -26,7 +27,9 @@ export function getAgentColor(agent: string): string {
     system: "text-muted-foreground",
     User: "text-primary",
   }
-  return colors[agent] || "text-foreground"
+  if (colors[agent]) return colors[agent]
+  const base = agent.replace(/ #\d+$/, "")
+  return colors[base] || "text-foreground"
 }
 
 export function getStatusColor(status: AgentStatus): string {
