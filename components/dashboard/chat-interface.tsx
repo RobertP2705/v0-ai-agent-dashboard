@@ -5,6 +5,8 @@ import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable"
+import { ResizableCard } from "@/components/ui/resizable-card"
 import {
   Collapsible,
   CollapsibleContent,
@@ -29,8 +31,8 @@ import {
   User,
   Copy,
   Check,
-  Database,
 } from "lucide-react"
+import { SupermemoryIcon } from "@/components/ui/supermemory-icon"
 import { StatusStepper } from "./status-stepper"
 import type { LogEntry, StepperStep } from "@/lib/simulation-data"
 import { getAgentColor } from "@/lib/simulation-data"
@@ -260,7 +262,7 @@ function CodeViewer({ code, language, stdout, stderr, exitCode }: {
   }
 
   return (
-    <div className="mt-1 rounded-md border border-border bg-card/80 overflow-hidden">
+    <ResizableCard className="mt-1 rounded-md border border-border bg-card/80 overflow-hidden" defaultHeight={260} minHeight={80} maxHeight={800}>
       <div className="flex items-center justify-between border-b border-border px-2 py-1">
         <div className="flex items-center gap-2">
           <Terminal className="h-3 w-3 text-chart-2" />
@@ -278,24 +280,24 @@ function CodeViewer({ code, language, stdout, stderr, exitCode }: {
           <span className="font-mono text-[9px]">{copied ? "Copied" : "Copy"}</span>
         </button>
       </div>
-      <pre className="max-h-[300px] overflow-auto p-2 font-mono text-[11px] text-foreground/80 leading-relaxed">
+      <pre className="overflow-auto p-2 font-mono text-[11px] text-foreground/80 leading-relaxed">
         <code>{code}</code>
       </pre>
       {(stdout || stderr) && (
         <div className="border-t border-border">
           {stdout && (
-            <pre className="max-h-[150px] overflow-auto p-2 font-mono text-[10px] text-foreground/60 leading-relaxed bg-secondary/30">
+            <pre className="overflow-auto p-2 font-mono text-[10px] text-foreground/60 leading-relaxed bg-secondary/30">
               <code>{stdout}</code>
             </pre>
           )}
           {stderr && (
-            <pre className="max-h-[100px] overflow-auto p-2 font-mono text-[10px] text-destructive/80 leading-relaxed bg-destructive/5">
+            <pre className="overflow-auto p-2 font-mono text-[10px] text-destructive/80 leading-relaxed bg-destructive/5">
               <code>{stderr}</code>
             </pre>
           )}
         </div>
       )}
-    </div>
+    </ResizableCard>
   )
 }
 
@@ -452,8 +454,12 @@ function AgentBubble({ group, isActive }: { group: AgentMessageGroup; isActive: 
                       <ChevronDown className="h-3 w-3" />
                       View response
                     </CollapsibleTrigger>
-                    <CollapsibleContent className="mt-1 rounded-md border border-border bg-card/60 p-2 max-h-[300px] overflow-y-auto">
-                      <Md>{item.event.message}</Md>
+                    <CollapsibleContent className="mt-1">
+                      <ResizableCard className="rounded-md border border-border bg-card/60" defaultHeight={240} minHeight={80} maxHeight={800}>
+                        <div className="p-2">
+                          <Md>{item.event.message}</Md>
+                        </div>
+                      </ResizableCard>
                     </CollapsibleContent>
                   </Collapsible>
                 )
@@ -521,8 +527,8 @@ function ChatBubble({ message }: { message: ChatMessage }) {
         <div className="flex items-center gap-1.5">
           {message.memorySaved && (
             <Badge variant="outline" className="font-mono text-[9px] px-1.5 py-0 border-primary/40 bg-primary/10 text-primary" title="Saved to Supermemory">
-              <Database className="h-2.5 w-2.5 mr-0.5" />
-              Saved to memory
+              <SupermemoryIcon className="h-2.5 w-2.5 mr-0.5" />
+              Saved to Supermemory
             </Badge>
           )}
           {isStreaming && (
@@ -551,13 +557,15 @@ function ChatBubble({ message }: { message: ChatMessage }) {
       )}
 
       {hasFinalResult && (
-        <div className="rounded-md border border-border bg-card/60 p-3 max-h-[28rem] overflow-y-auto">
-          <div className="flex items-center gap-1.5 mb-2">
-            <Brain className="h-3 w-3 text-primary" />
-            <span className="font-mono text-[10px] font-medium text-primary">Synthesized Report</span>
+        <ResizableCard className="rounded-md border border-border bg-card/60" defaultHeight={320} minHeight={100} maxHeight={900}>
+          <div className="p-3">
+            <div className="flex items-center gap-1.5 mb-2">
+              <Brain className="h-3 w-3 text-primary" />
+              <span className="font-mono text-[10px] font-medium text-primary">Synthesized Report</span>
+            </div>
+            <Md>{message.summary}</Md>
           </div>
-          <Md>{message.summary}</Md>
-        </div>
+        </ResizableCard>
       )}
 
       {message.status === "error" && (
@@ -888,27 +896,29 @@ export function ChatInterface({ fullscreen = false }: { fullscreen?: boolean }) 
             )}
             {memoryEnabled && (
               <Badge variant="secondary" className="font-mono text-[9px] px-1.5 py-0 bg-primary/15 text-primary border-primary/30" title="Supermemory is active">
-                <Database className="h-2.5 w-2.5 mr-1" />
-                Memory
+                <SupermemoryIcon className="h-2.5 w-2.5 mr-1" spinning={isSubmitting} />
+                Supermemory
               </Badge>
             )}
             {teamSelector}
           </div>
         </div>
 
-        {/* ── Main content: two columns ───────────────── */}
-        <div className="flex min-h-0 flex-1">
-          {/* Left: chat messages */}
-          <div className="flex min-w-0 flex-1 flex-col">
-            {messageList}
-            {inputBar}
-          </div>
-
-          {/* Right: event stream */}
-          <div className="hidden w-80 shrink-0 border-l border-border bg-card/40 lg:flex lg:flex-col">
-            <EventStreamPanel events={currentStreamEvents} />
-          </div>
-        </div>
+        {/* ── Main content: resizable two-column split ─── */}
+        <ResizablePanelGroup direction="horizontal" className="min-h-0 flex-1">
+          <ResizablePanel defaultSize={70} minSize={40}>
+            <div className="flex h-full flex-col">
+              {messageList}
+              {inputBar}
+            </div>
+          </ResizablePanel>
+          <ResizableHandle withHandle className="hidden lg:flex" />
+          <ResizablePanel defaultSize={30} minSize={15} className="hidden lg:block">
+            <div className="flex h-full flex-col bg-card/40">
+              <EventStreamPanel events={currentStreamEvents} />
+            </div>
+          </ResizablePanel>
+        </ResizablePanelGroup>
       </div>
     )
   }
@@ -921,8 +931,8 @@ export function ChatInterface({ fullscreen = false }: { fullscreen?: boolean }) 
           Research Console
           {memoryEnabled && (
             <Badge variant="secondary" className="font-mono text-[9px] px-1.5 py-0 bg-primary/15 text-primary border-primary/30" title="Supermemory is active — results are saved and used for context">
-              <Database className="h-2.5 w-2.5 mr-1" />
-              Memory
+              <SupermemoryIcon className="h-2.5 w-2.5 mr-1" spinning={isSubmitting} />
+              Supermemory
             </Badge>
           )}
         </CardTitle>
