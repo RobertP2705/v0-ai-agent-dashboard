@@ -27,6 +27,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 
 const navItems = [
   { id: "overview", label: "Swarm Overview", icon: LayoutGrid },
+  { id: "research", label: "Research", icon: Activity },
   { id: "teams", label: "Teams", icon: Users },
   { id: "meeting", label: "Research Meeting Room", icon: MessageSquare },
   { id: "credits", label: "API Credits", icon: CreditCard },

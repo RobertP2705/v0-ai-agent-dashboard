@@ -72,6 +72,7 @@ export function DashboardShell() {
             <div className="min-w-0 flex-1">
               <h2 className="truncate text-sm font-semibold text-foreground">
                 {activeView === "overview" && "Swarm Overview"}
+                {activeView === "research" && "Research Console"}
                 {activeView === "teams" && "Research Teams"}
                 {activeView === "meeting" && "Research Meeting Room"}
                 {activeView === "credits" && "API Credits"}
@@ -79,6 +80,8 @@ export function DashboardShell() {
               <p className="truncate font-mono text-[10px] text-muted-foreground">
                 {activeView === "overview" &&
                   "Real-time agent monitoring and research console"}
+                {activeView === "research" &&
+                  "Full-screen research console with live agent monitoring"}
                 {activeView === "teams" &&
                   "Create teams and assign specialized research agents"}
                 {activeView === "meeting" &&
@@ -108,6 +111,11 @@ export function DashboardShell() {
 
         <div className="flex-1 overflow-auto p-2 sm:p-4">
           {activeView === "overview" && <OverviewView userName={userName} />}
+          {activeView === "research" && (
+            <div className="h-full">
+              <ChatInterface fullscreen />
+            </div>
+          )}
           {activeView === "teams" && <TeamsView />}
           {activeView === "meeting" && <MeetingRoom />}
           {activeView === "credits" && <ApiCreditsView userEmail={user?.email} />}
