@@ -12,8 +12,18 @@ import {
   Activity,
   Users,
   LogOut,
+  ChevronUp,
 } from "lucide-react"
 import type { User } from "@supabase/supabase-js"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 
 const navItems = [
   { id: "overview", label: "Swarm Overview", icon: LayoutGrid },
@@ -103,37 +113,64 @@ export function SidebarNav({ activeView, onViewChange }: SidebarNavProps) {
         </div>
 
         {user && (
-          <div className="mt-2 flex items-center gap-2 rounded-md border border-border px-3 py-2">
-            {userAvatar ? (
-              <img
-                src={userAvatar}
-                alt=""
-                className="h-6 w-6 shrink-0 rounded-full"
-                referrerPolicy="no-referrer"
-              />
-            ) : (
-              <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">
-                {(userName || userEmail || "?").charAt(0).toUpperCase()}
-              </div>
-            )}
-            <div className="min-w-0 flex-1">
-              {userName && (
-                <p className="truncate text-xs font-medium text-sidebar-foreground">
-                  {userName}
-                </p>
-              )}
-              <p className="truncate font-mono text-[10px] text-muted-foreground">
-                {userEmail}
-              </p>
-            </div>
-            <button
-              onClick={handleSignOut}
-              className="shrink-0 rounded p-1 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
-              aria-label="Sign out"
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                className="mt-2 flex w-full items-center gap-2.5 rounded-md border border-border px-3 py-2.5 text-left transition-colors hover:bg-sidebar-accent/50"
+                aria-label="Account menu"
+              >
+                <Avatar className="h-7 w-7 shrink-0">
+                  {userAvatar ? (
+                    <AvatarImage
+                      src={userAvatar}
+                      alt=""
+                      referrerPolicy="no-referrer"
+                    />
+                  ) : null}
+                  <AvatarFallback className="bg-primary text-xs font-bold text-primary-foreground">
+                    {(userName || userEmail || "?").charAt(0).toUpperCase()}
+                  </AvatarFallback>
+                </Avatar>
+                <div className="min-w-0 flex-1">
+                  {userName && (
+                    <p className="truncate text-xs font-medium text-sidebar-foreground">
+                      {userName}
+                    </p>
+                  )}
+                  <p className="truncate font-mono text-[10px] text-muted-foreground">
+                    {userEmail}
+                  </p>
+                </div>
+                <ChevronUp className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent
+              side="top"
+              align="start"
+              sideOffset={8}
+              className="w-[216px]"
             >
-              <LogOut className="h-3.5 w-3.5" />
-            </button>
-          </div>
+              <DropdownMenuLabel className="font-normal">
+                <div className="flex flex-col space-y-1">
+                  {userName && (
+                    <p className="text-sm font-medium leading-none">{userName}</p>
+                  )}
+                  <p className="text-xs leading-none text-muted-foreground">
+                    {userEmail}
+                  </p>
+                </div>
+              </DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                variant="destructive"
+                onClick={handleSignOut}
+                className="cursor-pointer"
+              >
+                <LogOut className="mr-2 h-4 w-4" />
+                Log out
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         )}
       </div>
     </aside>
