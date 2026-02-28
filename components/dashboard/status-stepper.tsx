@@ -10,9 +10,9 @@ interface StatusStepperProps {
 
 export function StatusStepper({ steps }: StatusStepperProps) {
   return (
-    <div className="flex items-center gap-0">
+    <div className="flex w-min min-w-0 items-center gap-0 overflow-x-auto">
       {steps.map((step, i) => (
-        <div key={step.id} className="flex items-center">
+        <div key={step.id} className="flex shrink-0 items-center">
           <div className="flex items-center gap-1.5">
             <div
               className={cn(

@@ -137,7 +137,7 @@ export function AgentStatusGrid() {
       ) : (
         <>
           {teams.length > 0 && (
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <span className="font-mono text-[10px] text-muted-foreground">Team:</span>
               <select
                 value={selectedTeamId ?? ""}
@@ -165,8 +165,8 @@ export function AgentStatusGrid() {
               const count = getInstanceCount(agent.id)
               return (
                 <Card key={agent.id} className="border-border bg-card/80 backdrop-blur-sm">
-                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <div className="flex items-center gap-2">
+                  <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 space-y-0 pb-2">
+                    <div className="flex min-w-0 items-center gap-2">
                       <div className="flex h-7 w-7 items-center justify-center rounded-md bg-secondary">
                         <Icon className="h-3.5 w-3.5 text-foreground" />
                       </div>
@@ -210,7 +210,7 @@ export function AgentStatusGrid() {
       )}
 
       {stats && (
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-3">
           <div className="flex items-center gap-2 rounded-md border border-border bg-card/80 px-3 py-2">
             <FileText className="h-3.5 w-3.5 text-chart-1" />
             <div>
