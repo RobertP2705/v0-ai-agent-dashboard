@@ -11,21 +11,43 @@ import {
 import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
 import {
-  ChevronRight,
+  ChevronDown,
   Send,
+  Square,
   Brain,
   AlertTriangle,
   CheckCircle2,
   Cog,
   Lightbulb,
+  Loader2,
+  User,
 } from "lucide-react"
 import { StatusStepper } from "./status-stepper"
 import type { LogEntry, StepperStep } from "@/lib/simulation-data"
+import { getAgentColor } from "@/lib/simulation-data"
+import { streamResearch, cancelTask, type SwarmEvent } from "@/lib/swarm-client"
 import {
-  generateLogs,
-  generateSteps,
-  getAgentColor,
-} from "@/lib/simulation-data"
+  supabaseConfigured,
+  fetchTasks,
+  fetchTaskEvents,
+  type TaskRow,
+  type TaskEventRow,
+} from "@/lib/supabase"
+
+// ── Types ─────────────────────────────────────────────────────────────────
+
+interface ChatMessage {
+  id: string
+  type: "user" | "task"
+  query: string
+  taskId?: string
+  status: "pending" | "streaming" | "completed" | "error"
+  summary: string
+  events: LogEntry[]
+  timestamp: string
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────
 
 const typeIcons: Record<string, React.ElementType> = {
   thought: Lightbulb,
@@ -41,176 +63,377 @@ const typeColors: Record<string, string> = {
   error: "text-destructive",
 }
 
-function LogItem({ entry, depth = 0 }: { entry: LogEntry; depth?: number }) {
-  const [open, setOpen] = useState(depth === 0)
-  const Icon = typeIcons[entry.type] || Brain
-  const hasChildren = entry.children && entry.children.length > 0
+function formatTime(ts?: string | number): string {
+  const d = ts ? new Date(typeof ts === "number" ? ts * 1000 : ts) : new Date()
+  return d.toLocaleTimeString("en-US", {
+    hour12: false,
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  })
+}
 
+function swarmEventToLog(event: SwarmEvent): LogEntry {
+  return {
+    id: `ev-${event.timestamp}-${Math.random().toString(36).slice(2, 8)}`,
+    timestamp: formatTime(event.timestamp),
+    agent: event.agent,
+    type: event.type === "done" ? "result" : event.type,
+    message: event.message,
+  }
+}
+
+function dbEventToLog(row: TaskEventRow): LogEntry {
+  return {
+    id: row.id,
+    timestamp: formatTime(row.created_at),
+    agent: row.agent_type,
+    type: row.event_type as LogEntry["type"],
+    message: row.message,
+  }
+}
+
+function extractSummary(events: LogEntry[]): string {
+  const results = events.filter((e) => e.type === "result" && e.message)
+  if (results.length > 0) {
+    const last = results[results.length - 1]
+    return last.message.length > 300 ? last.message.slice(0, 300) + "..." : last.message
+  }
+  const last = events[events.length - 1]
+  return last ? (last.message.length > 200 ? last.message.slice(0, 200) + "..." : last.message) : "Processing..."
+}
+
+function pipelineSteps(status: ChatMessage["status"], events: LogEntry[]): StepperStep[] {
+  const hasRouting = events.some((e) => e.agent === "system" && e.message.startsWith("Routing to agents"))
+  const isTriaging = events.some((e) => e.agent === "system" && e.message.startsWith("Routing query to model"))
+  const hasAgentWork = events.some((e) => e.agent !== "system" && e.agent !== "User")
+  const hasSynth = events.some((e) => e.agent === "system" && e.message.startsWith("Synthesizing"))
+  const hasResult = events.some((e) => e.type === "result" && e.agent === "system")
+
+  if (status === "error") {
+    return [
+      { id: "triage", label: "Triage", status: hasRouting ? "completed" : "active" },
+      { id: "agents", label: "Agents", status: hasAgentWork ? "completed" : "pending" },
+      { id: "synthesize", label: "Error", status: "pending" },
+    ]
+  }
+  if (status === "completed") {
+    return [
+      { id: "triage", label: "Triage", status: "completed" },
+      { id: "agents", label: "Agents", status: "completed" },
+      { id: "synthesize", label: "Done", status: "completed" },
+    ]
+  }
+  return [
+    { id: "triage", label: isTriaging && !hasRouting ? "Connecting..." : "Triage", status: hasRouting ? "completed" : "active" },
+    { id: "agents", label: "Agents", status: hasAgentWork ? "active" : "pending" },
+    { id: "synthesize", label: "Synthesize", status: hasSynth || hasResult ? "active" : "pending" },
+  ]
+}
+
+// ── Storage key ───────────────────────────────────────────────────────────
+
+const STORAGE_KEY = "magi-chat-messages"
+
+function loadPersistedMessages(): ChatMessage[] {
+  if (typeof window === "undefined") return []
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY)
+    return raw ? JSON.parse(raw) : []
+  } catch {
+    return []
+  }
+}
+
+function persistMessages(msgs: ChatMessage[]) {
+  try {
+    const toStore = msgs.slice(-100).map((m) => ({
+      ...m,
+      events: m.events.slice(-30),
+    }))
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(toStore))
+  } catch {
+    // storage full, ignore
+  }
+}
+
+// ── Sub-components ────────────────────────────────────────────────────────
+
+function EventRow({ entry }: { entry: LogEntry }) {
+  const Icon = typeIcons[entry.type] || Brain
   return (
-    <Collapsible open={open} onOpenChange={setOpen}>
-      <CollapsibleTrigger asChild>
-        <button
-          className={cn(
-            "group flex w-full items-start gap-2 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-secondary/50",
-            depth > 0 && "ml-4 border-l border-border pl-3"
-          )}
-        >
-          {hasChildren && (
-            <ChevronRight
-              className={cn(
-                "mt-0.5 h-3 w-3 shrink-0 text-muted-foreground transition-transform",
-                open && "rotate-90"
-              )}
-            />
-          )}
-          {!hasChildren && <span className="w-3 shrink-0" />}
-          <Icon className={cn("mt-0.5 h-3 w-3 shrink-0", typeColors[entry.type])} />
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2">
-              <span className="font-mono text-[10px] text-muted-foreground">
-                {entry.timestamp}
-              </span>
-              <Badge
-                variant="outline"
-                className={cn(
-                  "font-mono text-[9px] px-1 py-0",
-                  getAgentColor(entry.agent)
-                )}
-              >
-                {entry.agent}
-              </Badge>
-            </div>
-            <p className="mt-0.5 font-mono text-xs text-foreground/90 leading-relaxed">
-              {entry.message}
-            </p>
-          </div>
-        </button>
-      </CollapsibleTrigger>
-      {hasChildren && (
-        <CollapsibleContent>
-          <div className="space-y-0.5">
-            {entry.children!.map((child) => (
-              <LogItem key={child.id} entry={child} depth={depth + 1} />
-            ))}
-          </div>
-        </CollapsibleContent>
-      )}
-    </Collapsible>
+    <div className="flex items-start gap-2 px-2 py-1">
+      <Icon className={cn("mt-0.5 h-3 w-3 shrink-0", typeColors[entry.type])} />
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <span className="font-mono text-[10px] text-muted-foreground">{entry.timestamp}</span>
+          <Badge variant="outline" className={cn("font-mono text-[9px] px-1 py-0", getAgentColor(entry.agent))}>
+            {entry.agent}
+          </Badge>
+        </div>
+        <p className="mt-0.5 font-mono text-[11px] text-foreground/80 leading-relaxed">{entry.message}</p>
+      </div>
+    </div>
   )
 }
 
+function ChatBubble({ message }: { message: ChatMessage }) {
+  const [open, setOpen] = useState(false)
+
+  if (message.type === "user") {
+    return (
+      <div className="flex items-start gap-2 py-2">
+        <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/20">
+          <User className="h-3 w-3 text-primary" />
+        </div>
+        <div className="min-w-0 flex-1 pt-0.5">
+          <p className="font-mono text-xs text-foreground">{message.query}</p>
+          <span className="font-mono text-[10px] text-muted-foreground">{message.timestamp}</span>
+        </div>
+      </div>
+    )
+  }
+
+  const steps = pipelineSteps(message.status, message.events)
+
+  return (
+    <div className="rounded-lg border border-border bg-secondary/20 p-3">
+      <div className="mb-2 flex items-center justify-between">
+        <StatusStepper steps={steps} />
+        {message.status === "streaming" && (
+          <Badge
+            variant="outline"
+            className="animate-pulse border-success/30 bg-success/10 font-mono text-[10px] text-success"
+          >
+            STREAMING
+          </Badge>
+        )}
+      </div>
+
+      <p className="font-mono text-xs text-foreground/90 leading-relaxed whitespace-pre-wrap">
+        {message.status === "streaming" && message.events.length === 0
+          ? "Waiting for response..."
+          : message.summary}
+      </p>
+
+      {message.events.length > 0 && (
+        <Collapsible open={open} onOpenChange={setOpen} className="mt-2">
+          <CollapsibleTrigger className="flex items-center gap-1 font-mono text-[10px] text-muted-foreground hover:text-foreground transition-colors">
+            <ChevronDown className={cn("h-3 w-3 transition-transform", open && "rotate-180")} />
+            {message.events.length} event{message.events.length !== 1 ? "s" : ""} — chain of thought
+          </CollapsibleTrigger>
+          <CollapsibleContent className="mt-2 max-h-[300px] overflow-y-auto rounded-md border border-border bg-card/60 py-1">
+            {message.events.map((ev) => (
+              <EventRow key={ev.id} entry={ev} />
+            ))}
+          </CollapsibleContent>
+        </Collapsible>
+      )}
+    </div>
+  )
+}
+
+// ── Main component ────────────────────────────────────────────────────────
+
 export function ChatInterface() {
-  const [logs, setLogs] = useState<LogEntry[]>(generateLogs)
-  const [steps, setSteps] = useState<StepperStep[]>(generateSteps)
+  const [messages, setMessages] = useState<ChatMessage[]>(loadPersistedMessages)
   const [inputValue, setInputValue] = useState("")
-  const [isStreaming, setIsStreaming] = useState(false)
+  const [isSubmitting, setIsSubmitting] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
+  const abortRef = useRef<AbortController | null>(null)
+  const bottomRef = useRef<HTMLDivElement>(null)
+  const activeTaskIdRef = useRef<string | null>(null)
+  const activeTaskMsgIdRef = useRef<string | null>(null)
 
-  const addStreamingLog = useCallback(() => {
-    const agents = ["Paper Finder", "Coder", "Tester"]
-    const types: ("thought" | "action" | "result")[] = [
-      "thought",
-      "action",
-      "result",
-    ]
-    const messages = [
-      "Evaluating relevance score for document batch #47...",
-      "Parsing abstract with NER model for key concepts",
-      "Cross-referencing citation graph with existing corpus",
-      "Generating embedding vectors for semantic search",
-      "Running type-check pass on generated kernel code",
-      "Compiling benchmark suite with CUDA 12.4 toolkit",
-      "Profiling memory allocation patterns for optimization",
-    ]
-
-    const newLog: LogEntry = {
-      id: `stream-${Date.now()}`,
-      timestamp: new Date().toLocaleTimeString("en-US", {
-        hour12: false,
-        hour: "2-digit",
-        minute: "2-digit",
-        second: "2-digit",
-      }),
-      agent: agents[Math.floor(Math.random() * agents.length)],
-      type: types[Math.floor(Math.random() * types.length)],
-      message: messages[Math.floor(Math.random() * messages.length)],
-    }
-
-    setLogs((prev) => [...prev.slice(-30), newLog])
-  }, [])
-
+  // Load history from Supabase on mount
   useEffect(() => {
-    setIsStreaming(true)
-    const interval = setInterval(addStreamingLog, 3000)
-    return () => clearInterval(interval)
-  }, [addStreamingLog])
+    if (!supabaseConfigured) return
+    const stored = loadPersistedMessages()
+    if (stored.length > 0) return // already have local history
 
-  useEffect(() => {
-    // Cycle steps over time
-    const stepTimer = setInterval(() => {
-      setSteps((prev) => {
-        const activeIdx = prev.findIndex((s) => s.status === "active")
-        if (activeIdx === -1 || activeIdx >= prev.length - 1) {
-          return generateSteps()
+    fetchTasks(20)
+      .then(async (tasks) => {
+        const restored: ChatMessage[] = []
+        for (const t of tasks.reverse()) {
+          restored.push({
+            id: `user-${t.id}`,
+            type: "user",
+            query: t.query,
+            status: "completed",
+            summary: "",
+            events: [],
+            timestamp: formatTime(t.created_at),
+          })
+
+          let events: LogEntry[] = []
+          try {
+            const rows = await fetchTaskEvents(t.id)
+            events = rows.map(dbEventToLog)
+          } catch {
+            // skip
+          }
+
+          restored.push({
+            id: `task-${t.id}`,
+            type: "task",
+            query: t.query,
+            taskId: t.id,
+            status: t.status === "completed" ? "completed" : t.status === "error" ? "error" : "completed",
+            summary: t.merged_answer
+              ? (t.merged_answer.length > 300 ? t.merged_answer.slice(0, 300) + "..." : t.merged_answer)
+              : extractSummary(events),
+            events,
+            timestamp: formatTime(t.created_at),
+          })
         }
-        return prev.map((s, i) => ({
-          ...s,
-          status:
-            i <= activeIdx
-              ? "completed"
-              : i === activeIdx + 1
-                ? "active"
-                : "pending",
-        })) as StepperStep[]
+        if (restored.length > 0) {
+          setMessages(restored)
+          persistMessages(restored)
+        }
       })
-    }, 8000)
-    return () => clearInterval(stepTimer)
+      .catch(() => {})
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // Persist on change
+  useEffect(() => {
+    persistMessages(messages)
+  }, [messages])
+
+  // Auto-scroll
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" })
+  }, [messages])
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    if (!inputValue.trim()) return
-    const userLog: LogEntry = {
+    if (!inputValue.trim() || isSubmitting) return
+
+    const query = inputValue.trim()
+    const now = formatTime()
+
+    const userMsg: ChatMessage = {
       id: `user-${Date.now()}`,
-      timestamp: new Date().toLocaleTimeString("en-US", {
-        hour12: false,
-        hour: "2-digit",
-        minute: "2-digit",
-        second: "2-digit",
-      }),
-      agent: "User",
-      type: "action",
-      message: inputValue,
+      type: "user",
+      query,
+      status: "completed",
+      summary: "",
+      events: [],
+      timestamp: now,
     }
-    setLogs((prev) => [...prev, userLog])
+
+    const taskMsg: ChatMessage = {
+      id: `task-${Date.now()}`,
+      type: "task",
+      query,
+      status: "streaming",
+      summary: "Processing...",
+      events: [],
+      timestamp: now,
+    }
+
+    setMessages((prev) => [...prev, userMsg, taskMsg])
     setInputValue("")
+    setIsSubmitting(true)
+
+    abortRef.current?.abort()
+    activeTaskIdRef.current = null
+    activeTaskMsgIdRef.current = taskMsg.id
+    abortRef.current = streamResearch(
+      query,
+      (event) => {
+        if (event.task_id) activeTaskIdRef.current = event.task_id
+        const log = swarmEventToLog(event)
+        setMessages((prev) => {
+          const updated = [...prev]
+          const idx = updated.findIndex((m) => m.id === taskMsg.id)
+          if (idx === -1) return prev
+          const msg = { ...updated[idx] }
+          msg.events = [...msg.events, log]
+          msg.summary = extractSummary(msg.events)
+          if (event.task_id) msg.taskId = event.task_id
+          updated[idx] = msg
+          return updated
+        })
+      },
+      () => {
+        activeTaskIdRef.current = null
+        activeTaskMsgIdRef.current = null
+        setMessages((prev) => {
+          const updated = [...prev]
+          const idx = updated.findIndex((m) => m.id === taskMsg.id)
+          if (idx === -1) return prev
+          updated[idx] = { ...updated[idx], status: "completed" }
+          return updated
+        })
+        setIsSubmitting(false)
+      },
+      (err) => {
+        activeTaskIdRef.current = null
+        activeTaskMsgIdRef.current = null
+        setMessages((prev) => {
+          const updated = [...prev]
+          const idx = updated.findIndex((m) => m.id === taskMsg.id)
+          if (idx === -1) return prev
+          updated[idx] = {
+            ...updated[idx],
+            status: "error",
+            summary: `Error: ${err.message}`,
+          }
+          return updated
+        })
+        setIsSubmitting(false)
+      },
+    )
+  }
+
+  const handleCancel = async () => {
+    abortRef.current?.abort()
+    abortRef.current = null
+
+    if (activeTaskIdRef.current) {
+      cancelTask(activeTaskIdRef.current).catch(() => {})
+    }
+
+    if (activeTaskMsgIdRef.current) {
+      setMessages((prev) => {
+        const updated = [...prev]
+        const idx = updated.findIndex((m) => m.id === activeTaskMsgIdRef.current)
+        if (idx === -1) return prev
+        updated[idx] = {
+          ...updated[idx],
+          status: "error",
+          summary: updated[idx].summary.replace("Processing...", "") || "Cancelled by user",
+        }
+        return updated
+      })
+    }
+
+    activeTaskIdRef.current = null
+    activeTaskMsgIdRef.current = null
+    setIsSubmitting(false)
   }
 
   return (
     <Card className="flex h-full flex-col border-border bg-card/80 backdrop-blur-sm">
-      <CardHeader className="space-y-3 border-b border-border pb-3">
-        <div className="flex items-center justify-between">
-          <CardTitle className="flex items-center gap-2 text-sm font-medium">
-            <Brain className="h-3.5 w-3.5 text-primary" />
-            Chain of Thought
-          </CardTitle>
-          {isStreaming && (
-            <Badge
-              variant="outline"
-              className="animate-pulse border-success/30 bg-success/10 font-mono text-[10px] text-success"
-            >
-              STREAMING
-            </Badge>
-          )}
-        </div>
-        <StatusStepper steps={steps} />
+      <CardHeader className="border-b border-border pb-3">
+        <CardTitle className="flex items-center gap-2 text-sm font-medium">
+          <Brain className="h-3.5 w-3.5 text-primary" />
+          Research Console
+        </CardTitle>
       </CardHeader>
       <CardContent className="flex min-h-0 flex-1 flex-col p-0">
         <ScrollArea className="flex-1 p-3" ref={scrollRef}>
-          <div className="space-y-1">
-            {logs.map((log) => (
-              <LogItem key={log.id} entry={log} />
+          <div className="space-y-3">
+            {messages.length === 0 && (
+              <p className="py-12 text-center font-mono text-xs text-muted-foreground">
+                Send a research query to get started.
+              </p>
+            )}
+            {messages.map((msg) => (
+              <ChatBubble key={msg.id} message={msg} />
             ))}
+            <div ref={bottomRef} />
           </div>
         </ScrollArea>
         <form
@@ -221,15 +444,26 @@ export function ChatInterface() {
             type="text"
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
-            placeholder="Send a command to the swarm..."
+            placeholder="Send a research query to the swarm..."
             className="flex-1 rounded-md border border-border bg-secondary px-3 py-2 font-mono text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
           />
-          <button
-            type="submit"
-            className="flex h-8 w-8 items-center justify-center rounded-md bg-primary text-primary-foreground transition-colors hover:bg-primary/80"
-          >
-            <Send className="h-3.5 w-3.5" />
-          </button>
+          {isSubmitting ? (
+            <button
+              type="button"
+              onClick={handleCancel}
+              className="flex h-8 w-8 items-center justify-center rounded-md bg-destructive text-destructive-foreground transition-colors hover:bg-destructive/80"
+              title="Stop task"
+            >
+              <Square className="h-3.5 w-3.5" />
+            </button>
+          ) : (
+            <button
+              type="submit"
+              className="flex h-8 w-8 items-center justify-center rounded-md bg-primary text-primary-foreground transition-colors hover:bg-primary/80 disabled:opacity-50"
+            >
+              <Send className="h-3.5 w-3.5" />
+            </button>
+          )}
         </form>
       </CardContent>
     </Card>

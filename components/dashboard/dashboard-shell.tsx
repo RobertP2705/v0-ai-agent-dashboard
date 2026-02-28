@@ -7,9 +7,7 @@ import { ApiMonitor } from "@/components/dashboard/api-monitor"
 import { ChatInterface } from "@/components/dashboard/chat-interface"
 import { MeetingRoom } from "@/components/dashboard/meeting-room"
 import { ApiCreditsView } from "@/components/dashboard/api-credits-view"
-import { generateAgents } from "@/lib/simulation-data"
-
-const initialAgents = generateAgents()
+import { TeamsView } from "@/components/dashboard/teams-view"
 
 export function DashboardShell() {
   const [activeView, setActiveView] = useState("overview")
@@ -23,12 +21,15 @@ export function DashboardShell() {
           <div>
             <h2 className="text-sm font-semibold text-foreground">
               {activeView === "overview" && "Swarm Overview"}
+              {activeView === "teams" && "Research Teams"}
               {activeView === "meeting" && "Research Meeting Room"}
               {activeView === "credits" && "API Credits"}
             </h2>
             <p className="font-mono text-[10px] text-muted-foreground">
               {activeView === "overview" &&
-                "Real-time agent monitoring and chain-of-thought logs"}
+                "Real-time agent monitoring and research console"}
+              {activeView === "teams" &&
+                "Create teams and assign specialized research agents"}
               {activeView === "meeting" &&
                 "Multi-agent discussion with voice synthesis"}
               {activeView === "credits" &&
@@ -47,7 +48,8 @@ export function DashboardShell() {
         </header>
 
         <div className="flex-1 overflow-auto p-4">
-          {activeView === "overview" && <OverviewView agents={initialAgents} />}
+          {activeView === "overview" && <OverviewView />}
+          {activeView === "teams" && <TeamsView />}
           {activeView === "meeting" && <MeetingRoom />}
           {activeView === "credits" && <ApiCreditsView />}
         </div>
@@ -56,14 +58,10 @@ export function DashboardShell() {
   )
 }
 
-function OverviewView({
-  agents,
-}: {
-  agents: ReturnType<typeof generateAgents>
-}) {
+function OverviewView() {
   return (
     <div className="flex h-full flex-col gap-4">
-      <AgentStatusGrid agents={agents} />
+      <AgentStatusGrid />
       <ApiMonitor />
       <div className="min-h-0 flex-1">
         <ChatInterface />

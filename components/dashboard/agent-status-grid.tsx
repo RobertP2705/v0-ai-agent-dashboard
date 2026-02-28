@@ -3,62 +3,17 @@
 import { useEffect, useState, useCallback } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Cpu, MemoryStick, Search, Code, FlaskConical } from "lucide-react"
+import { BookOpen, Terminal, Compass, FileText, FlaskConical, Signpost } from "lucide-react"
 import { cn } from "@/lib/utils"
-import type { AgentInfo, AgentStatus } from "@/lib/simulation-data"
+import { supabaseConfigured, fetchDashboardStats, type DashboardStats } from "@/lib/supabase"
+import { fetchAgents, type SwarmAgent } from "@/lib/swarm-client"
+import type { AgentStatus } from "@/lib/simulation-data"
 import { getStatusColor } from "@/lib/simulation-data"
 
-function MiniGraph({
-  data,
-  color,
-  height = 32,
-}: {
-  data: number[]
-  color: string
-  height?: number
-}) {
-  const max = 100
-  const width = 120
-  const points = data
-    .map(
-      (v, i) =>
-        `${(i / (data.length - 1)) * width},${height - (v / max) * height}`
-    )
-    .join(" ")
-
-  return (
-    <svg
-      width={width}
-      height={height}
-      viewBox={`0 0 ${width} ${height}`}
-      className="overflow-visible"
-    >
-      <defs>
-        <linearGradient id={`grad-${color}`} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor={color} stopOpacity="0.3" />
-          <stop offset="100%" stopColor={color} stopOpacity="0.02" />
-        </linearGradient>
-      </defs>
-      <polyline
-        points={`0,${height} ${points} ${width},${height}`}
-        fill={`url(#grad-${color})`}
-      />
-      <polyline
-        points={points}
-        fill="none"
-        stroke={color}
-        strokeWidth="1.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  )
-}
-
 const agentIcons: Record<string, React.ElementType> = {
-  "Paper Finder": Search,
-  Coder: Code,
-  Tester: FlaskConical,
+  "paper-collector": BookOpen,
+  implementer: Terminal,
+  "research-director": Compass,
 }
 
 function StatusDot({ status }: { status: AgentStatus }) {
@@ -79,111 +34,95 @@ function StatusDot({ status }: { status: AgentStatus }) {
   )
 }
 
-interface AgentStatusGridProps {
-  agents: AgentInfo[]
-}
+const FALLBACK_AGENTS: SwarmAgent[] = [
+  { id: "paper-collector", name: "Paper Collector", description: "Searches and summarizes papers", tools: [], status: "idle", task: "" },
+  { id: "implementer", name: "Implementer", description: "Reproduces papers in code", tools: [], status: "idle", task: "" },
+  { id: "research-director", name: "Research Director", description: "Identifies research directions", tools: [], status: "idle", task: "" },
+]
 
-export function AgentStatusGrid({ agents }: AgentStatusGridProps) {
-  const [liveAgents, setLiveAgents] = useState(agents)
+export function AgentStatusGrid() {
+  const [agents, setAgents] = useState<SwarmAgent[]>(FALLBACK_AGENTS)
+  const [stats, setStats] = useState<DashboardStats | null>(null)
 
-  const updateAgents = useCallback(() => {
-    setLiveAgents((prev) =>
-      prev.map((agent) => {
-        const newCpu = Math.max(
-          0,
-          Math.min(100, agent.cpuCurrent + (Math.random() - 0.5) * 8)
-        )
-        const newMem = Math.max(
-          0,
-          Math.min(100, agent.memoryCurrent + (Math.random() - 0.5) * 5)
-        )
-        return {
-          ...agent,
-          cpuCurrent: Math.round(newCpu),
-          memoryCurrent: Math.round(newMem),
-          cpuHistory: [...agent.cpuHistory.slice(1), newCpu],
-          memoryHistory: [...agent.memoryHistory.slice(1), newMem],
-        }
-      })
-    )
+  const refresh = useCallback(async () => {
+    try {
+      const data = await fetchAgents()
+      if (data.length > 0) setAgents(data)
+    } catch {
+      // keep fallback
+    }
+    if (supabaseConfigured) {
+      try {
+        setStats(await fetchDashboardStats())
+      } catch {
+        // keep null
+      }
+    }
   }, [])
 
   useEffect(() => {
-    const interval = setInterval(updateAgents, 1500)
+    refresh()
+    const interval = setInterval(refresh, 15000)
     return () => clearInterval(interval)
-  }, [updateAgents])
+  }, [refresh])
 
   return (
-    <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-      {liveAgents.map((agent) => {
-        const Icon = agentIcons[agent.name] || Code
-        return (
-          <Card
-            key={agent.id}
-            className="border-border bg-card/80 backdrop-blur-sm"
-          >
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <div className="flex items-center gap-2">
-                <div className="flex h-7 w-7 items-center justify-center rounded-md bg-secondary">
-                  <Icon className="h-3.5 w-3.5 text-foreground" />
-                </div>
-                <CardTitle className="text-sm font-medium">
-                  {agent.name}
-                </CardTitle>
-              </div>
-              <Badge
-                variant="outline"
-                className={cn(
-                  "font-mono text-[10px] uppercase",
-                  getStatusColor(agent.status)
-                )}
-              >
-                <StatusDot status={agent.status} />
-                {agent.status}
-              </Badge>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <p className="font-mono text-xs text-muted-foreground line-clamp-1">
-                {agent.task}
-              </p>
-
-              <div className="flex items-center gap-4">
-                <div className="flex-1 space-y-1">
-                  <div className="flex items-center gap-1.5">
-                    <Cpu className="h-3 w-3 text-chart-1" />
-                    <span className="font-mono text-[10px] text-muted-foreground">
-                      CPU
-                    </span>
-                    <span className="ml-auto font-mono text-[10px] font-medium text-foreground">
-                      {agent.cpuCurrent}%
-                    </span>
+    <div className="space-y-3">
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+        {agents.map((agent) => {
+          const Icon = agentIcons[agent.id] || BookOpen
+          return (
+            <Card key={agent.id} className="border-border bg-card/80 backdrop-blur-sm">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <div className="flex items-center gap-2">
+                  <div className="flex h-7 w-7 items-center justify-center rounded-md bg-secondary">
+                    <Icon className="h-3.5 w-3.5 text-foreground" />
                   </div>
-                  <MiniGraph
-                    data={agent.cpuHistory}
-                    color="oklch(0.72 0.19 160)"
-                  />
+                  <CardTitle className="text-sm font-medium">{agent.name}</CardTitle>
                 </div>
+                <Badge
+                  variant="outline"
+                  className={cn("font-mono text-[10px] uppercase", getStatusColor(agent.status))}
+                >
+                  <StatusDot status={agent.status} />
+                  {agent.status}
+                </Badge>
+              </CardHeader>
+              <CardContent>
+                <p className="font-mono text-xs text-muted-foreground line-clamp-1">
+                  {agent.task || agent.description}
+                </p>
+              </CardContent>
+            </Card>
+          )
+        })}
+      </div>
 
-                <div className="flex-1 space-y-1">
-                  <div className="flex items-center gap-1.5">
-                    <MemoryStick className="h-3 w-3 text-chart-2" />
-                    <span className="font-mono text-[10px] text-muted-foreground">
-                      MEM
-                    </span>
-                    <span className="ml-auto font-mono text-[10px] font-medium text-foreground">
-                      {agent.memoryCurrent}%
-                    </span>
-                  </div>
-                  <MiniGraph
-                    data={agent.memoryHistory}
-                    color="oklch(0.65 0.17 250)"
-                  />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        )
-      })}
+      {stats && (
+        <div className="grid grid-cols-3 gap-3">
+          <div className="flex items-center gap-2 rounded-md border border-border bg-card/80 px-3 py-2">
+            <FileText className="h-3.5 w-3.5 text-chart-1" />
+            <div>
+              <p className="font-mono text-[10px] text-muted-foreground">Papers</p>
+              <p className="font-mono text-sm font-semibold">{stats.totalPapers}</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 rounded-md border border-border bg-card/80 px-3 py-2">
+            <FlaskConical className="h-3.5 w-3.5 text-chart-2" />
+            <div>
+              <p className="font-mono text-[10px] text-muted-foreground">Experiments</p>
+              <p className="font-mono text-sm font-semibold">{stats.totalExperiments}</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 rounded-md border border-border bg-card/80 px-3 py-2">
+            <Signpost className="h-3.5 w-3.5 text-chart-3" />
+            <div>
+              <p className="font-mono text-[10px] text-muted-foreground">Directions</p>
+              <p className="font-mono text-sm font-semibold">{stats.totalDirections}</p>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -7,10 +7,12 @@ import {
   CreditCard,
   Brain,
   Activity,
+  Users,
 } from "lucide-react"
 
 const navItems = [
   { id: "overview", label: "Swarm Overview", icon: LayoutGrid },
+  { id: "teams", label: "Teams", icon: Users },
   { id: "meeting", label: "Research Meeting Room", icon: MessageSquare },
   { id: "credits", label: "API Credits", icon: CreditCard },
 ]
@@ -32,7 +34,7 @@ export function SidebarNav({ activeView, onViewChange }: SidebarNavProps) {
             Swarm Lab
           </h1>
           <p className="font-mono text-[10px] text-muted-foreground">
-            v2.4.1-beta
+            v3.0.0
           </p>
         </div>
       </div>
@@ -70,7 +72,7 @@ export function SidebarNav({ activeView, onViewChange }: SidebarNavProps) {
               System Online
             </p>
             <p className="font-mono text-[10px] text-muted-foreground">
-              3 agents active
+              Qwen3-32B on A100
             </p>
           </div>
         </div>

@@ -5,21 +5,26 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { cn } from "@/lib/utils"
-import { Mic, Volume2, Search, Code, FlaskConical } from "lucide-react"
+import { Mic, Volume2, BookOpen, Terminal, Compass } from "lucide-react"
 
 const agentConfigs = [
   {
-    name: "Paper Finder",
-    icon: Search,
+    name: "Paper Collector",
+    icon: BookOpen,
     color: "text-chart-1",
     bgColor: "bg-chart-1",
   },
-  { name: "Coder", icon: Code, color: "text-chart-2", bgColor: "bg-chart-2" },
   {
-    name: "Tester",
-    icon: FlaskConical,
-    color: "text-chart-4",
-    bgColor: "bg-chart-4",
+    name: "Implementer",
+    icon: Terminal,
+    color: "text-chart-2",
+    bgColor: "bg-chart-2",
+  },
+  {
+    name: "Research Director",
+    icon: Compass,
+    color: "text-chart-3",
+    bgColor: "bg-chart-3",
   },
 ]
 
@@ -32,19 +37,19 @@ interface MeetingMessage {
 
 const sampleDialogue: string[][] = [
   [
-    "I found a promising paper on sparse attention mechanisms. The authors report 40% memory savings on sequence lengths over 8k tokens.",
-    "Let me look at their benchmarks. They tested on three different GPU architectures: A100, H100, and the new B200.",
-    "Cross-referencing with our existing corpus... This paper cites 12 other works we already have indexed.",
+    "I found a promising paper on sparse attention mechanisms on arXiv. The authors report 40% memory savings on sequences over 8k tokens.",
+    "Cross-referencing with Semantic Scholar... This paper cites 12 other works. Top result: 'FlashAttention-3'.",
+    "Literature review complete. Key trend: hybrid sparse-dense attention is outperforming pure sparse methods.",
   ],
   [
-    "I can implement the core kernel. The algorithm uses a tiled approach with shared memory optimization.",
-    "Looking at the CUDA code in the appendix. I see they use warp-level primitives for the reduction step.",
-    "I have a draft implementation ready. The kernel compiles but I need Tester to validate correctness.",
+    "I've written a reproduction of the core kernel in PyTorch. Running it in a Modal sandbox now.",
+    "Sandbox run complete. Forward pass: 35% speedup confirmed. Logging metrics to W&B and pushing code to GitHub.",
+    "Experiment pushed to github.com/user/flash-attn-repro. W&B run shows accuracy within 1e-6 of reference.",
   ],
   [
-    "Running the benchmark suite now. Initial results show 35% speedup on the forward pass.",
-    "Memory profiling indicates peak usage of 4.2GB for the 8k sequence case. Within acceptable limits.",
-    "All 47 test cases pass. The numerical accuracy is within 1e-6 of the reference implementation.",
+    "Based on the papers and implementation results, I see three promising directions worth exploring.",
+    "Direction 1: Combining sparse attention with mixture-of-experts routing. Feasibility: 0.8, Novelty: 0.7.",
+    "Direction 2: Hardware-aware attention for heterogeneous compute. Under-explored in literature. Novelty: 0.9.",
   ],
 ]
 
@@ -129,7 +134,7 @@ export function MeetingRoom() {
   const [messageIdx, setMessageIdx] = useState(0)
 
   const addMessage = useCallback(() => {
-    const agentIndex = activeAgent % 3
+    const agentIndex = activeAgent % agentConfigs.length
     const dialogue = sampleDialogue[agentIndex]
     const msgIndex = messageIdx % dialogue.length
 
@@ -148,7 +153,6 @@ export function MeetingRoom() {
     setMessages((prev) => [...prev.slice(-20), msg])
     setMessageIdx((prev) => prev + 1)
 
-    // Cycle to next agent after each message
     setActiveAgent((prev) => prev + 1)
   }, [activeAgent, messageIdx])
 
@@ -157,7 +161,7 @@ export function MeetingRoom() {
     return () => clearInterval(interval)
   }, [addMessage])
 
-  const currentAgentConfig = agentConfigs[activeAgent % 3]
+  const currentAgentConfig = agentConfigs[activeAgent % agentConfigs.length]
 
   return (
     <div className="flex h-full flex-col gap-3">
@@ -182,7 +186,7 @@ export function MeetingRoom() {
         <CardContent>
           <div className="flex items-center gap-3">
             {agentConfigs.map((agent, idx) => {
-              const isActive = activeAgent % 3 === idx
+              const isActive = activeAgent % agentConfigs.length === idx
               const Icon = agent.icon
               return (
                 <div
@@ -224,7 +228,7 @@ export function MeetingRoom() {
                         ? "oklch(0.72 0.19 160)"
                         : idx === 1
                           ? "oklch(0.65 0.17 250)"
-                          : "oklch(0.60 0.20 25)"
+                          : "oklch(0.68 0.16 300)"
                     }
                   />
                 </div>
