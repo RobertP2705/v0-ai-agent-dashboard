@@ -78,6 +78,13 @@ create table if not exists research_directions (
   created_at timestamptz default now()
 );
 
+-- Per-user chat history (replaces localStorage)
+create table if not exists chat_history (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  messages jsonb default '[]',
+  updated_at timestamptz default now()
+);
+
 -- Enable realtime on task_events for live streaming
 alter publication supabase_realtime add table task_events;
 alter publication supabase_realtime add table tasks;

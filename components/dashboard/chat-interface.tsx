@@ -47,6 +47,9 @@ import {
   fetchTasks,
   fetchTaskEvents,
   fetchTeams,
+  loadChatHistory,
+  saveChatHistory,
+  clearChatHistory,
   type TaskEventRow,
   type Team,
 } from "@/lib/supabase"
@@ -211,18 +214,21 @@ function loadPersistedMessages(storageKey: string): ChatMessage[] {
   } catch { return [] }
 }
 
+function prepareForStorage(msgs: ChatMessage[], limit: number): ChatMessage[] {
+  return msgs.slice(-limit).map((m) => ({
+    ...m,
+    events: m.events.slice(-50).map((e) => {
+      if (e.meta?.code && typeof e.meta.code === "string" && e.meta.code.length > 500) {
+        return { ...e, meta: { ...e.meta, code: (e.meta.code as string).slice(0, 500) + "\n# ... truncated for storage" } }
+      }
+      return e
+    }),
+  }))
+}
+
 function persistMessages(msgs: ChatMessage[], storageKey: string) {
   try {
-    const toStore = msgs.slice(-100).map((m) => ({
-      ...m,
-      events: m.events.slice(-50).map((e) => {
-        if (e.meta?.code && typeof e.meta.code === "string" && e.meta.code.length > 500) {
-          return { ...e, meta: { ...e.meta, code: (e.meta.code as string).slice(0, 500) + "\n# ... truncated for storage" } }
-        }
-        return e
-      }),
-    }))
-    localStorage.setItem(storageKey, JSON.stringify(toStore))
+    localStorage.setItem(storageKey, JSON.stringify(prepareForStorage(msgs, 100)))
   } catch { /* storage full */ }
 }
 
@@ -877,6 +883,7 @@ export function ChatInterface({ fullscreen = false, projectId, teamId }: ChatInt
   const [streamStartTime, setStreamStartTime] = useState<number | null>(null)
   const { setStreamingState } = useStreaming()
   const activeAgentsRef = useRef<Set<string>>(new Set())
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const storageKey = projectId
     ? `${getStorageKey(userId ?? null)}-project-${projectId}`
@@ -911,6 +918,44 @@ export function ChatInterface({ fullscreen = false, projectId, teamId }: ChatInt
     if (loadedForUserRef.current === userId) return
     loadedForUserRef.current = userId
 
+    // Authenticated users: load from Supabase DB (project-specific)
+    if (userId && supabaseConfigured) {
+      loadChatHistory()
+        .then(async (dbMessages) => {
+          if (dbMessages && Array.isArray(dbMessages) && dbMessages.length > 0) {
+            const msgs = dbMessages as ChatMessage[]
+            for (const m of msgs) {
+              if (m.memorySaved) savedToMemoryRef.current.add(m.id)
+            }
+            setMessages(msgs)
+            return
+          }
+
+          // DB empty — try restoring from tasks table (first-time migration)
+          try {
+            const tasks = await fetchTasks(20)
+            const restored: ChatMessage[] = []
+            for (const t of tasks.reverse()) {
+              restored.push({ id: `user-${t.id}`, type: "user", query: t.query, status: "completed", summary: "", events: [], timestamp: formatTime(t.created_at) })
+              let events: LogEntry[] = []
+              try { events = (await fetchTaskEvents(t.id)).map(dbEventToLog) } catch { /* skip */ }
+              restored.push({
+                id: `task-${t.id}`, type: "task", query: t.query, taskId: t.id,
+                status: t.status === "completed" ? "completed" : t.status === "error" ? "error" : "completed",
+                summary: t.merged_answer || extractSummary(events), events, timestamp: formatTime(t.created_at),
+              })
+            }
+            if (restored.length > 0) {
+              setMessages(restored)
+              saveChatHistory(userId, prepareForStorage(restored, 50)).catch(() => {})
+            }
+          } catch { /* skip */ }
+        })
+        .catch(() => {})
+      return
+    }
+
+    // Anonymous / no Supabase: fall back to localStorage
     const key = getStorageKey(userId)
     const stored = loadPersistedMessages(key)
     if (stored.length > 0) {
@@ -918,33 +963,26 @@ export function ChatInterface({ fullscreen = false, projectId, teamId }: ChatInt
         if (m.memorySaved) savedToMemoryRef.current.add(m.id)
       }
       setMessages(stored)
-      return
     }
-
-    if (!supabaseConfigured) return
-
-    fetchTasks(20)
-      .then(async (tasks) => {
-        const restored: ChatMessage[] = []
-        for (const t of tasks.reverse()) {
-          restored.push({ id: `user-${t.id}`, type: "user", query: t.query, status: "completed", summary: "", events: [], timestamp: formatTime(t.created_at) })
-          let events: LogEntry[] = []
-          try { events = (await fetchTaskEvents(t.id)).map(dbEventToLog) } catch { /* skip */ }
-          restored.push({
-            id: `task-${t.id}`, type: "task", query: t.query, taskId: t.id,
-            status: t.status === "completed" ? "completed" : t.status === "error" ? "error" : "completed",
-            summary: t.merged_answer || extractSummary(events), events, timestamp: formatTime(t.created_at),
-          })
-        }
-        if (restored.length > 0) { setMessages(restored); persistMessages(restored, key) }
-      })
-      .catch(() => {})
   }, [userId])
 
+  // Persist to localStorage for anonymous users only
   useEffect(() => {
-    if (userId === undefined) return
+    if (userId === undefined || userId) return
     persistMessages(messages, storageKey)
   }, [messages, storageKey, userId])
+
+  // Debounced save to Supabase for authenticated users
+  useEffect(() => {
+    if (!userId || !supabaseConfigured) return
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
+    const hasActiveStream = messages.some((m) => m.status === "streaming")
+    const delay = hasActiveStream ? 5000 : 500
+    saveTimerRef.current = setTimeout(() => {
+      saveChatHistory(userId, prepareForStorage(messages, 50)).catch(() => {})
+    }, delay)
+    return () => { if (saveTimerRef.current) clearTimeout(saveTimerRef.current) }
+  }, [messages, userId])
 
   // Save user messages and completed research tasks to Supermemory
   useEffect(() => {
@@ -1118,6 +1156,10 @@ export function ChatInterface({ fullscreen = false, projectId, teamId }: ChatInt
     if (isSubmitting) return
     setMessages([])
     savedToMemoryRef.current = new Set()
+    if (userId && supabaseConfigured) {
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
+      clearChatHistory(userId).catch(() => {})
+    }
     try { localStorage.removeItem(storageKey) } catch {}
   }
 
