@@ -102,7 +102,11 @@ class Qwen3Model:
         result = outputs[0]
         generated_text = result.outputs[0].text.strip()
 
-        if not enable_thinking:
+        thinking_text: str | None = None
+        if enable_thinking:
+            thinking_text = _extract_think_content(generated_text)
+            generated_text = _strip_think_tags(generated_text)
+        else:
             generated_text = _strip_think_tags(generated_text)
 
         tool_calls = _extract_tool_calls(generated_text)
@@ -110,7 +114,7 @@ class Qwen3Model:
         prompt_toks = len(result.prompt_token_ids) if result.prompt_token_ids else 0
         completion_toks = len(result.outputs[0].token_ids) if result.outputs[0].token_ids else 0
 
-        return {
+        out: dict = {
             "content": generated_text if not tool_calls else None,
             "tool_calls": tool_calls,
             "usage": {
@@ -119,10 +123,20 @@ class Qwen3Model:
                 "total_tokens": prompt_toks + completion_toks,
             },
         }
+        if thinking_text:
+            out["thinking"] = thinking_text
+        return out
+
+
+def _extract_think_content(text: str) -> str | None:
+    """Extract <think>...</think> block for chain-of-thought; return None if absent."""
+    import re
+    m = re.search(r"<think>(.*?)</think>", text, re.DOTALL)
+    return m.group(1).strip() if m else None
 
 
 def _strip_think_tags(text: str) -> str:
-    """Remove any <think>...</think> blocks the model emits even with thinking disabled."""
+    """Remove any <think>...</think> blocks so only the actionable content remains."""
     import re
     return re.sub(r"<think>.*?</think>\s*", "", text, flags=re.DOTALL).strip()
 

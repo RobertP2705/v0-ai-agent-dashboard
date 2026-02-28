@@ -10,9 +10,24 @@ TOOL_SCHEMA = {
         "name": "modal_sandbox",
         "description": (
             "Execute Python code in an isolated Modal sandbox container with optional GPU. "
+<<<<<<< Updated upstream
             "Use this to reproduce paper implementations, run experiments, "
             "and test code. The sandbox has WANDB_API_KEY and GITHUB_TOKEN "
             "environment variables available. Returns stdout, stderr, and exit code."
+<<<<<<< HEAD
+>>>>>>> b1d96c3 (wand working)
+=======
+            "Execute Python code in an isolated Modal sandbox container with optional GPU. "
+            "Use this to reproduce paper implementations, run experiments, "
+            "and test code. The sandbox has WANDB_API_KEY and GITHUB_TOKEN "
+            "environment variables available. Returns stdout, stderr, and exit code."
+>>>>>>> b1d96c3 (wand working)
+=======
+            "The container has git installed. Use for experiments, git clone, etc. "
+            "WANDB_API_KEY and GITHUB_TOKEN are available. Returns stdout, stderr, and exit code."
+>>>>>>> Stashed changes
+=======
+>>>>>>> b18c20807117ea39a3ed0b7a4eb38de785851667
         ),
         "parameters": {
             "type": "object",
@@ -56,8 +71,10 @@ def modal_sandbox(
     reqs = requirements or []
     app_ref = modal.App.lookup("research-swarm", create_if_missing=True)
 
-    image = modal.Image.debian_slim(python_version="3.11").pip_install(
-        *reqs, "wandb",
+    image = (
+        modal.Image.debian_slim(python_version="3.11")
+        .run_commands("apt-get update && apt-get install -y --no-install-recommends git")
+        .pip_install(*reqs, "wandb")
     )
 
     sandbox_kwargs: dict = dict(

@@ -36,6 +36,14 @@ class CancelledError(Exception):
     pass
 
 
+THINKING_INSTRUCTIONS = """\
+Work step-by-step with explicit reasoning (chain-of-thought):
+1. Before taking any action, briefly plan the next 1–3 steps and why.
+2. After each tool result, reason about what happened and what to do next.
+3. When a step fails (error, bad output, wrong result), think through possible causes and fixes or a revised plan before trying again. Do not repeat the same failing step without a concrete change.
+"""
+
+
 class BaseAgent:
     """Agentic loop: prompt -> model -> tool calls -> model -> ... -> final answer."""
 
@@ -156,8 +164,9 @@ class BaseAgent:
 
     def run(self, task: str) -> Generator[AgentEvent, None, AgentResult]:
         """Execute the agentic loop, yielding events as they happen."""
+        system_content = THINKING_INSTRUCTIONS.strip() + "\n\n" + self.system_prompt
         messages: list[dict] = [
-            {"role": "system", "content": self.system_prompt},
+            {"role": "system", "content": system_content},
             {"role": "user", "content": task},
         ]
         tool_schemas = self._build_tool_schemas()
@@ -173,9 +182,13 @@ class BaseAgent:
             response = self.model.generate.remote(
                 messages=messages,
                 tools=tool_schemas if tool_schemas else None,
-                enable_thinking=False,
+                enable_thinking=True,
             )
             self._accumulate_usage(response.get("usage", {}))
+
+            thinking = response.get("thinking")
+            if thinking and isinstance(thinking, str) and thinking.strip():
+                yield self._emit("thought", thinking.strip())
 
             tool_calls = response.get("tool_calls")
             content = response.get("content")
