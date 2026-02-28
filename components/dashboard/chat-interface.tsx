@@ -806,24 +806,6 @@ export function ChatInterface({ fullscreen = false }: { fullscreen?: boolean }) 
 
   const storageKey = getStorageKey(userId ?? null)
 
-  const updateStreamingAgents = useCallback((events: LogEntry[]) => {
-    const agents = new Set<string>()
-    for (const e of events) {
-      if (e.agent && e.agent !== "system" && e.agent !== "User") {
-        agents.add(e.agent)
-      }
-    }
-    const agentIds: string[] = []
-    agents.forEach((a) => {
-      const id = a.replace(/ #\d+$/, "").toLowerCase().replace(/\s+/g, "-")
-      agentIds.push(id)
-    })
-    if (agentIds.join(",") !== [...activeAgentsRef.current].join(",")) {
-      activeAgentsRef.current = new Set(agentIds)
-      setStreamingState({ isStreaming: true, activeAgents: agentIds })
-    }
-  }, [setStreamingState])
-
   useEffect(() => {
     fetch("/api/memory/status")
       .then((r) => r.ok && r.json())
@@ -953,6 +935,14 @@ export function ChatInterface({ fullscreen = false }: { fullscreen?: boolean }) 
       (event) => {
         if (event.task_id) activeTaskIdRef.current = event.task_id
         const log = swarmEventToLog(event)
+        // Update streaming context outside of setState to avoid side-effects in updater
+        if (event.agent && event.agent !== "system" && event.agent !== "User") {
+          const id = event.agent.replace(/ #\d+$/, "").toLowerCase().replace(/\s+/g, "-")
+          if (!activeAgentsRef.current.has(id)) {
+            activeAgentsRef.current.add(id)
+            setStreamingState({ isStreaming: true, activeAgents: [...activeAgentsRef.current] })
+          }
+        }
         setMessages((prev) => {
           const updated = [...prev]
           const idx = updated.findIndex((m) => m.id === taskMsg.id)
@@ -962,7 +952,6 @@ export function ChatInterface({ fullscreen = false }: { fullscreen?: boolean }) 
           msg.summary = extractSummary(msg.events)
           if (event.task_id) msg.taskId = event.task_id
           updated[idx] = msg
-          updateStreamingAgents(msg.events)
           return updated
         })
       },

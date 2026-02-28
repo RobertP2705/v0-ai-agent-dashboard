@@ -122,11 +122,12 @@ export function AgentStatusGrid() {
     }
   }, [])
 
+  // Poll faster (3s) while streaming, normal (15s) otherwise
   useEffect(() => {
     refresh()
-    const interval = setInterval(refresh, 15000)
+    const interval = setInterval(refresh, isStreaming ? 3000 : 15000)
     return () => clearInterval(interval)
-  }, [refresh])
+  }, [refresh, isStreaming])
 
   return (
     <div className="space-y-3">

@@ -10,6 +10,7 @@ import asyncio
 import json
 import queue
 import threading
+import time
 from typing import AsyncGenerator
 
 import modal
@@ -24,6 +25,11 @@ from .serve_model import app as modal_app, Qwen3Model
 from . import db
 
 app = modal_app
+
+# In-process tracking of active research sessions for real-time agent status.
+# Each entry maps a session key to the set of agent IDs active in that session.
+_active_sessions: dict[str, set[str]] = {}
+_sessions_lock = threading.Lock()
 
 web_app = FastAPI(title="Research Swarm API")
 
@@ -85,6 +91,13 @@ async def get_agents() -> list[dict]:
         for aid in (t.get("assigned_agents") or []):
             busy[aid] = (t.get("query") or "")[:100]
 
+    # Merge in-process active sessions (catches tasks between DB polls)
+    with _sessions_lock:
+        for agent_ids in _active_sessions.values():
+            for aid in agent_ids:
+                if aid in AGENT_DEFINITIONS and aid not in busy:
+                    busy[aid] = "Processing research query..."
+
     return [
         {
             "id": aid,
@@ -97,6 +110,20 @@ async def get_agents() -> list[dict]:
         }
         for aid, defn in AGENT_DEFINITIONS.items()
     ]
+
+
+@web_app.get("/model/status")
+async def model_status():
+    """Real-time model status: active sessions and which agents are working."""
+    with _sessions_lock:
+        all_agents: dict[str, str] = {}
+        for agent_ids in _active_sessions.values():
+            for aid in agent_ids:
+                all_agents[aid] = "busy"
+        return {
+            "active_sessions": len(_active_sessions),
+            "active_agents": all_agents,
+        }
 
 
 class AgentScale(BaseModel):
@@ -183,11 +210,26 @@ async def toggle_agent_endpoint(team_id: str, agent_row_id: str, body: AgentTogg
 @web_app.post("/research")
 async def submit_research(req: ResearchRequest) -> dict:
     model = Qwen3Model()
+    session_key = f"s-{id(req)}-{time.time()}"
+    _name_to_id = {defn["name"]: aid for aid, defn in AGENT_DEFINITIONS.items()}
 
     def _run():
-        gen = run_research(req.query, model, team_id=req.team_id, memory_context=req.memory_context)
-        for _ in gen:
-            pass
+        with _sessions_lock:
+            _active_sessions[session_key] = set()
+        try:
+            gen = run_research(req.query, model, team_id=req.team_id, memory_context=req.memory_context)
+            for event in gen:
+                agent_name = event.get("agent", "")
+                if agent_name and agent_name != "system":
+                    base_name = agent_name.rsplit(" #", 1)[0]
+                    agent_id = _name_to_id.get(base_name)
+                    if agent_id:
+                        with _sessions_lock:
+                            if session_key in _active_sessions:
+                                _active_sessions[session_key].add(agent_id)
+        finally:
+            with _sessions_lock:
+                _active_sessions.pop(session_key, None)
 
     await asyncio.get_event_loop().run_in_executor(None, _run)
     return {"status": "completed"}
@@ -197,11 +239,28 @@ async def submit_research(req: ResearchRequest) -> dict:
 async def submit_research_stream(req: ResearchRequest) -> StreamingResponse:
     model = Qwen3Model()
     q: queue.Queue[dict | None] = queue.Queue()
+    session_key = f"s-{id(req)}-{time.time()}"
+
+    # Pre-register session so /agents immediately shows busy
+    with _sessions_lock:
+        _active_sessions[session_key] = set()
+
+    # Map display names back to agent IDs for status tracking
+    _name_to_id = {defn["name"]: aid for aid, defn in AGENT_DEFINITIONS.items()}
 
     def _run():
         try:
             gen = run_research(req.query, model, team_id=req.team_id, memory_context=req.memory_context)
             for event in gen:
+                # Track which agents are active from stream events
+                agent_name = event.get("agent", "")
+                if agent_name and agent_name != "system":
+                    base_name = agent_name.rsplit(" #", 1)[0]
+                    agent_id = _name_to_id.get(base_name)
+                    if agent_id:
+                        with _sessions_lock:
+                            if session_key in _active_sessions:
+                                _active_sessions[session_key].add(agent_id)
                 q.put(event)
         except Exception as exc:
             from .agents.base import CancelledError
@@ -211,7 +270,7 @@ async def submit_research_stream(req: ResearchRequest) -> StreamingResponse:
                     "agent": "system",
                     "type": "error",
                     "message": "Cancelled by user",
-                    "timestamp": __import__("time").time(),
+                    "timestamp": time.time(),
                 })
             else:
                 q.put({
@@ -219,22 +278,29 @@ async def submit_research_stream(req: ResearchRequest) -> StreamingResponse:
                     "agent": "system",
                     "type": "error",
                     "message": str(exc),
-                    "timestamp": __import__("time").time(),
+                    "timestamp": time.time(),
                 })
         finally:
+            with _sessions_lock:
+                _active_sessions.pop(session_key, None)
             q.put(None)
 
     threading.Thread(target=_run, daemon=True).start()
 
     async def event_generator() -> AsyncGenerator[str, None]:
-        while True:
-            while q.empty():
-                await asyncio.sleep(0.05)
-            item = q.get()
-            if item is None:
-                break
-            yield f"data: {json.dumps(item)}\n\n"
-        yield "data: [DONE]\n\n"
+        try:
+            while True:
+                while q.empty():
+                    await asyncio.sleep(0.05)
+                item = q.get()
+                if item is None:
+                    break
+                yield f"data: {json.dumps(item)}\n\n"
+            yield "data: [DONE]\n\n"
+        finally:
+            # Clean up if client disconnects early
+            with _sessions_lock:
+                _active_sessions.pop(session_key, None)
 
     return StreamingResponse(
         event_generator(),
