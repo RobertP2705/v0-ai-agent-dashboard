@@ -29,6 +29,18 @@ export interface TeamAgent {
   enabled: boolean
 }
 
+export interface ResearchProject {
+  id: string
+  user_id: string
+  name: string
+  description: string
+  status: "setup" | "active" | "paused" | "completed"
+  team_id: string | null
+  created_at: string
+  updated_at: string
+  team?: Team | null
+}
+
 export interface Paper {
   id: string
   task_id: string | null
@@ -271,4 +283,128 @@ export async function fetchDashboardStats(): Promise<DashboardStats> {
     totalExperiments: experiments.count ?? 0,
     totalDirections: directions.count ?? 0,
   }
+}
+
+// ── Project CRUD ─────────────────────────────────────────────────────────
+
+export async function fetchProjects(): Promise<ResearchProject[]> {
+  const supabase = getSupabase()
+  const { data, error } = await supabase
+    .from("research_projects")
+    .select("*, team:teams(id, name, description)")
+    .order("updated_at", { ascending: false })
+  if (error) throw error
+  return data ?? []
+}
+
+export async function fetchProject(id: string): Promise<ResearchProject> {
+  const supabase = getSupabase()
+  const { data, error } = await supabase
+    .from("research_projects")
+    .select("*, team:teams(id, name, description)")
+    .eq("id", id)
+    .single()
+  if (error) throw error
+  return data
+}
+
+export async function createProject(
+  name: string,
+  description = "",
+  teamId?: string,
+): Promise<ResearchProject> {
+  const supabase = getSupabase()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) throw new Error("Not authenticated")
+
+  const { data, error } = await supabase
+    .from("research_projects")
+    .insert({
+      name,
+      description,
+      user_id: user.id,
+      team_id: teamId ?? null,
+      status: "active",
+    })
+    .select("*, team:teams(id, name, description)")
+    .single()
+  if (error) throw error
+  return data
+}
+
+export async function updateProject(
+  id: string,
+  updates: Partial<Pick<ResearchProject, "name" | "description" | "status" | "team_id">>,
+): Promise<ResearchProject> {
+  const supabase = getSupabase()
+  const { data, error } = await supabase
+    .from("research_projects")
+    .update({ ...updates, updated_at: new Date().toISOString() })
+    .eq("id", id)
+    .select("*, team:teams(id, name, description)")
+    .single()
+  if (error) throw error
+  return data
+}
+
+export async function deleteProject(id: string): Promise<void> {
+  const supabase = getSupabase()
+  const { error } = await supabase.from("research_projects").delete().eq("id", id)
+  if (error) throw error
+}
+
+// ── Scoped queries (filter by project_id via its team_id → tasks.team_id) ──
+
+export async function fetchTasksForProject(projectId: string, limit = 50): Promise<TaskRow[]> {
+  const project = await fetchProject(projectId)
+  if (!project.team_id) return []
+  const supabase = getSupabase()
+  const { data, error } = await supabase
+    .from("tasks")
+    .select("*")
+    .eq("team_id", project.team_id)
+    .order("created_at", { ascending: false })
+    .limit(limit)
+  if (error) throw error
+  return data ?? []
+}
+
+export async function fetchPapersForProject(projectId: string, limit = 50): Promise<Paper[]> {
+  const project = await fetchProject(projectId)
+  if (!project.team_id) return []
+  const supabase = getSupabase()
+  const taskIds = await supabase
+    .from("tasks")
+    .select("id")
+    .eq("team_id", project.team_id)
+  const ids = (taskIds.data ?? []).map((t) => t.id)
+  if (ids.length === 0) return []
+  const { data, error } = await supabase
+    .from("papers")
+    .select("*")
+    .in("task_id", ids)
+    .order("created_at", { ascending: false })
+    .limit(limit)
+  if (error) throw error
+  return data ?? []
+}
+
+export async function fetchEventsForProject(projectId: string, limit = 200): Promise<TaskEventRow[]> {
+  const project = await fetchProject(projectId)
+  if (!project.team_id) return []
+  const supabase = getSupabase()
+  const taskIds = await supabase
+    .from("tasks")
+    .select("id")
+    .eq("team_id", project.team_id)
+  const ids = (taskIds.data ?? []).map((t) => t.id)
+  if (ids.length === 0) return []
+  const { data, error } = await supabase
+    .from("task_events")
+    .select("*")
+    .in("task_id", ids)
+    .order("created_at", { ascending: false })
+    .limit(limit)
+  if (error) throw error
+  return (data ?? []).reverse()
 }

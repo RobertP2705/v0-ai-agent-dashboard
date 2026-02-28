@@ -70,7 +70,11 @@ const ALL_NODE_TYPES: NodeType[] = ["memory", "paper", "experiment", "direction"
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type FGMethods = ForceGraphMethods<any, any>
 
-export function KnowledgeGraphView() {
+interface KnowledgeGraphViewProps {
+  projectId?: string
+}
+
+export function KnowledgeGraphView({ projectId }: KnowledgeGraphViewProps = {}) {
   const [graphData, setGraphData] = useState<GraphData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
