@@ -9,9 +9,11 @@ TOOL_SCHEMA = {
     "function": {
         "name": "modal_sandbox",
         "description": (
-            "Execute Python code in an isolated Modal sandbox container. "
+            "Execute Python code in an isolated Modal sandbox container with GPU access. "
             "Use this to reproduce paper implementations, run experiments, "
-            "and test code. Returns stdout, stderr, and exit code."
+            "and test code. The sandbox has access to W&B (WANDB_API_KEY) and "
+            "GitHub (GITHUB_TOKEN) environment variables automatically. "
+            "Returns stdout, stderr, and exit code."
         ),
         "parameters": {
             "type": "object",
@@ -23,7 +25,16 @@ TOOL_SCHEMA = {
                 "requirements": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": "pip packages to install (e.g. ['torch', 'numpy']).",
+                    "description": "pip packages to install (e.g. ['torch', 'numpy', 'einops']).",
+                },
+                "setup_commands": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Shell commands to run before executing the code (e.g. ['apt-get install -y libgl1'] for system deps).",
+                },
+                "gpu": {
+                    "type": "string",
+                    "description": "GPU type to use (e.g. 'T4', 'A10G', 'A100'). Omit for CPU-only.",
                 },
                 "timeout": {
                     "type": "integer",
@@ -39,6 +50,8 @@ TOOL_SCHEMA = {
 def modal_sandbox(
     code: str,
     requirements: list[str] | None = None,
+    setup_commands: list[str] | None = None,
+    gpu: str | None = None,
     timeout: int = 600,
 ) -> dict:
     reqs = requirements or []
@@ -48,8 +61,22 @@ def modal_sandbox(
         *reqs, "wandb",
     )
 
-    sb = modal.Sandbox.create(app=app_ref, image=image, timeout=timeout)
+    sandbox_kwargs: dict = dict(
+        app=app_ref,
+        image=image,
+        timeout=timeout,
+        secrets=[modal.Secret.from_name("search-api-keys")],
+    )
+    if gpu:
+        sandbox_kwargs["gpu"] = gpu
+
+    sb = modal.Sandbox.create(**sandbox_kwargs)
     try:
+        if setup_commands:
+            for cmd in setup_commands:
+                setup_proc = sb.exec("bash", "-c", cmd)
+                setup_proc.wait()
+
         write_proc = sb.exec(
             "bash", "-c",
             f"cat > /root/experiment.py << 'PYEOF'\n{code}\nPYEOF",

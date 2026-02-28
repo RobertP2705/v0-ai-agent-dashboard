@@ -79,7 +79,11 @@ export function streamResearch(
     signal: controller.signal,
   })
     .then(async (res) => {
-      if (!res.ok) throw new Error(`Stream failed: ${res.status}`)
+      if (!res.ok) {
+        let detail = ""
+        try { const body = await res.json(); detail = body.detail || body.error || "" } catch { /* ignore */ }
+        throw new Error(`Stream failed: ${res.status}${detail ? ` — ${detail.slice(0, 300)}` : ""}`)
+      }
       const reader = res.body?.getReader()
       if (!reader) throw new Error("No response body")
 

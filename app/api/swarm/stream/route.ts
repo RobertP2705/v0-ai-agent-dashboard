@@ -44,8 +44,11 @@ export async function POST(req: NextRequest) {
     })
 
     if (!upstreamRes.ok || !upstreamRes.body) {
+      let detail = ""
+      try { detail = await upstreamRes.text() } catch { /* ignore */ }
+      console.error(`[swarm/stream] Modal API error ${upstreamRes.status}:`, detail)
       return new Response(
-        JSON.stringify({ error: `Modal API error: ${upstreamRes.status}` }),
+        JSON.stringify({ error: `Modal API error: ${upstreamRes.status}`, detail }),
         { status: upstreamRes.status, headers: { "Content-Type": "application/json" } },
       )
     }

@@ -283,6 +283,7 @@ function CodeViewer({ code, language, stdout, stderr, exitCode }: {
 
 function ToolCallCard({ event, resultEvent }: { event: LogEntry; resultEvent?: LogEntry }) {
   const [expanded, setExpanded] = useState(false)
+  const [outputOpen, setOutputOpen] = useState(true)
   const tool = (event.meta?.tool as string) || ""
   const Icon = getToolIcon(tool)
   const isSandbox = tool === "modal_sandbox"
@@ -313,10 +314,45 @@ function ToolCallCard({ event, resultEvent }: { event: LogEntry; resultEvent?: L
         )}
         <ChevronRight className={cn("h-3 w-3 shrink-0 text-muted-foreground transition-transform", expanded && "rotate-90")} />
       </button>
+
+      {isSandbox && (stdout || stderr) && (
+        <div className="mt-1 pl-2 space-y-1">
+          {stdout && (
+            <Collapsible open={outputOpen} onOpenChange={setOutputOpen}>
+              <div className={cn("rounded-md border overflow-hidden",
+                exitCode === 0 ? "border-success/20" : "border-border"
+              )}>
+                <CollapsibleTrigger className="w-full flex items-center gap-1.5 px-2 py-1 bg-secondary/40 hover:bg-secondary/60 transition-colors">
+                  <Terminal className="h-2.5 w-2.5 text-chart-2" />
+                  <span className="font-mono text-[9px] text-muted-foreground flex-1 text-left">Sandbox Output</span>
+                  <ChevronDown className={cn("h-2.5 w-2.5 text-muted-foreground transition-transform", !outputOpen && "-rotate-90")} />
+                </CollapsibleTrigger>
+                <CollapsibleContent>
+                  <pre className="max-h-[200px] overflow-auto p-2 font-mono text-[10px] text-foreground/70 leading-relaxed bg-secondary/20">
+                    <code>{stdout}</code>
+                  </pre>
+                </CollapsibleContent>
+              </div>
+            </Collapsible>
+          )}
+          {stderr && (
+            <div className="rounded-md border border-destructive/20 bg-destructive/5 overflow-hidden">
+              <div className="flex items-center gap-1.5 px-2 py-1 bg-destructive/10">
+                <AlertTriangle className="h-2.5 w-2.5 text-destructive" />
+                <span className="font-mono text-[9px] text-destructive/80">Error Output</span>
+              </div>
+              <pre className="max-h-[150px] overflow-auto p-2 font-mono text-[10px] text-destructive/80 leading-relaxed">
+                <code>{stderr}</code>
+              </pre>
+            </div>
+          )}
+        </div>
+      )}
+
       {expanded && (
         <div className="pl-2">
           {isSandbox && code ? (
-            <CodeViewer code={code} stdout={stdout} stderr={stderr} exitCode={exitCode ?? null} />
+            <CodeViewer code={code} exitCode={exitCode ?? null} />
           ) : (
             <div className="mt-1 rounded-md border border-border bg-card/60 p-2">
               <pre className="max-h-[200px] overflow-auto font-mono text-[10px] text-foreground/70 whitespace-pre-wrap">

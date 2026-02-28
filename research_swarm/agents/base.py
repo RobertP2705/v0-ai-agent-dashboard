@@ -190,6 +190,9 @@ class BaseAgent:
 
             messages.append({"role": "assistant", "content": content, "tool_calls": tool_calls})
 
+            if content and content.strip():
+                yield self._emit("thought", content.strip())
+
             for tc in tool_calls:
                 self._check_cancelled()
                 fn_name = tc["function"]["name"]
@@ -213,7 +216,23 @@ class BaseAgent:
                         result_meta["stderr"] = parsed.get("stderr", "")[:1000]
                 except (json.JSONDecodeError, TypeError):
                     pass
-                yield self._emit("result", f"{fn_name} returned ({len(tool_result)} chars)", **result_meta)
+                if fn_name == "modal_sandbox" and "exit_code" in result_meta:
+                    ec = result_meta["exit_code"]
+                    stdout_text = result_meta.get("stdout", "")
+                    stderr_text = result_meta.get("stderr", "")
+                    if ec == 0:
+                        preview = stdout_text.strip()[:120]
+                        msg = f"modal_sandbox returned ({len(tool_result)} chars)"
+                        if preview:
+                            msg += f" — {preview}{'…' if len(stdout_text.strip()) > 120 else ''}"
+                    else:
+                        preview = (stderr_text or stdout_text).strip()[:120]
+                        msg = f"modal_sandbox failed (exit {ec})"
+                        if preview:
+                            msg += f" — {preview}{'…' if len((stderr_text or stdout_text).strip()) > 120 else ''}"
+                    yield self._emit("result", msg, **result_meta)
+                else:
+                    yield self._emit("result", f"{fn_name} returned ({len(tool_result)} chars)", **result_meta)
 
                 messages.append({
                     "role": "tool",
