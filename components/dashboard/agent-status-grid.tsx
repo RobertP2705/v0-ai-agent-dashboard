@@ -85,11 +85,16 @@ function InstanceCounter({
   )
 }
 
-export function AgentStatusGrid() {
+interface AgentStatusGridProps {
+  projectId?: string
+  teamId?: string
+}
+
+export function AgentStatusGrid({ projectId, teamId }: AgentStatusGridProps = {}) {
   const [agents, setAgents] = useState<SwarmAgent[]>([])
   const [stats, setStats] = useState<DashboardStats | null>(null)
   const [teams, setTeams] = useState<Team[]>([])
-  const [selectedTeamId, setSelectedTeamId] = useState<string | null>(null)
+  const [selectedTeamId, setSelectedTeamId] = useState<string | null>(teamId ?? null)
   const { isStreaming, activeAgents } = useStreaming()
 
   const selectedTeam = teams.find((t) => t.id === selectedTeamId)

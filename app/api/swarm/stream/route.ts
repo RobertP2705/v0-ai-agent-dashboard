@@ -31,10 +31,14 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    const basePayload = { ...body }
+    // Ensure project_id is forwarded to the Modal backend
+    if (body.project_id) basePayload.project_id = body.project_id
+
     const payload =
       memoryContext.length > 0
-        ? { ...body, memory_context: memoryContext }
-        : body
+        ? { ...basePayload, memory_context: memoryContext }
+        : basePayload
 
     const upstreamRes = await fetch(`${MODAL_URL}/research/stream`, {
       method: "POST",

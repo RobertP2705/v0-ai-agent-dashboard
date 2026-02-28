@@ -32,6 +32,7 @@ export interface SwarmTask {
   total_usage: { prompt_tokens: number; completion_tokens: number; total_tokens: number }
   created_at: string
   team_id: string | null
+  project_id: string | null
 }
 
 export async function fetchAgents(): Promise<SwarmAgent[]> {
@@ -69,13 +70,14 @@ export function streamResearch(
   onDone: () => void,
   onError: (error: Error) => void,
   teamId?: string,
+  projectId?: string,
 ): AbortController {
   const controller = new AbortController()
 
   fetch("/api/swarm/stream", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ query, team_id: teamId }),
+    body: JSON.stringify({ query, team_id: teamId, project_id: projectId }),
     signal: controller.signal,
   })
     .then(async (res) => {

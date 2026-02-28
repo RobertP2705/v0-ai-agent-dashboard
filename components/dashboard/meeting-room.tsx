@@ -253,7 +253,12 @@ function useTTSAvailable() {
 
 // ── Main MeetingRoom ───────────────────────────────────────────────────────
 
-export function MeetingRoom() {
+interface MeetingRoomProps {
+  projectId?: string
+  teamId?: string
+}
+
+export function MeetingRoom({ projectId, teamId }: MeetingRoomProps = {}) {
   const { isStreaming, currentEvents } = useStreaming()
   const [ttsEnabled, setTtsEnabled] = useState(true)
   const [volume, setVolume] = useState([80])

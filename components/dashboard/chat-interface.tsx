@@ -821,13 +821,19 @@ function AgentStatusBar() {
 
 let nextMsgId = 0
 
-export function ChatInterface({ fullscreen = false }: { fullscreen?: boolean }) {
+interface ChatInterfaceProps {
+  fullscreen?: boolean
+  projectId?: string
+  teamId?: string
+}
+
+export function ChatInterface({ fullscreen = false, projectId, teamId }: ChatInterfaceProps) {
   const [userId, setUserId] = useState<string | null | undefined>(undefined)
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [inputValue, setInputValue] = useState("")
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [teams, setTeams] = useState<Team[]>([])
-  const [selectedTeamId, setSelectedTeamId] = useState<string | null>(null)
+  const [selectedTeamId, setSelectedTeamId] = useState<string | null>(teamId ?? null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const abortRef = useRef<AbortController | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
@@ -854,6 +860,11 @@ export function ChatInterface({ fullscreen = false }: { fullscreen?: boolean }) 
       setUserId(user?.id ?? null)
     })
   }, [])
+
+  // Sync selectedTeamId when teamId prop changes (project assignment)
+  useEffect(() => {
+    if (teamId) setSelectedTeamId(teamId)
+  }, [teamId])
 
   useEffect(() => {
     if (!supabaseConfigured) return
@@ -1059,7 +1070,8 @@ export function ChatInterface({ fullscreen = false }: { fullscreen?: boolean }) 
         })
         setIsSubmitting(false)
       },
-      selectedTeamId ?? undefined,
+      selectedTeamId ?? teamId ?? undefined,
+      projectId,
     )
   }
 
@@ -1110,7 +1122,7 @@ export function ChatInterface({ fullscreen = false }: { fullscreen?: boolean }) 
   const latestTaskGroups = latestTask ? buildAgentGroups(latestTask.events) : []
   const currentStreamEvents = latestTask?.events ?? []
 
-  const teamSelector = teams.length > 0 && (
+  const teamSelector = !teamId && teams.length > 0 && (
     <Select value={selectedTeamId ?? "all"} onValueChange={(v) => setSelectedTeamId(v === "all" ? null : v)}>
       <SelectTrigger className="h-8 min-w-0 flex-1 font-mono text-[11px] sm:w-[180px] sm:flex-initial" size="sm"><SelectValue placeholder="Team" /></SelectTrigger>
       <SelectContent>

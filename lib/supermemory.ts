@@ -45,3 +45,52 @@ export async function searchMemories({ q, containerTags, limit = 5 }: SearchMemo
   })
   return response.results ?? []
 }
+
+export interface ListDocumentsOptions {
+  containerTags: string[]
+  limit?: number
+  page?: number
+  includeContent?: boolean
+}
+
+export async function listDocuments({
+  containerTags,
+  limit = 50,
+  page = 1,
+  includeContent = false,
+}: ListDocumentsOptions) {
+  const client = getClient()
+  const response = await client.documents.list({
+    containerTags,
+    limit,
+    page,
+    includeContent,
+    sort: "createdAt",
+    order: "desc",
+  })
+  return response
+}
+
+export interface SearchMemoriesWithScoreOptions {
+  q: string
+  containerTag: string
+  limit?: number
+}
+
+export async function searchMemoriesWithScore({
+  q,
+  containerTag,
+  limit = 10,
+}: SearchMemoriesWithScoreOptions) {
+  const client = getClient()
+  const response = await client.search.memories({
+    q,
+    containerTag,
+    limit,
+    include: {
+      relatedMemories: true,
+      documents: true,
+    },
+  })
+  return response.results ?? []
+}
