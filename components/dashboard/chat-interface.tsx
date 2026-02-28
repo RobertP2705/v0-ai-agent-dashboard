@@ -1106,7 +1106,6 @@ export function ChatInterface({ fullscreen = false }: { fullscreen?: boolean }) 
 
   // Derive data for fullscreen top bar
   const latestTask = [...messages].reverse().find((m) => m.type === "task")
-  const activeSteps = latestTask ? pipelineSteps(latestTask.status, latestTask.events) : null
   const latestTaskGroups = latestTask ? buildAgentGroups(latestTask.events) : []
   const currentStreamEvents = latestTask?.events ?? []
 
@@ -1179,7 +1178,6 @@ export function ChatInterface({ fullscreen = false }: { fullscreen?: boolean }) 
               <Brain className="h-4 w-4 text-primary" />
               <span className="text-sm font-medium text-foreground">Research Console</span>
             </div>
-            {activeSteps && <StatusStepper steps={activeSteps} size="lg" />}
           </div>
           <div className="flex items-center gap-3">
             {isSubmitting && streamStartTime && (
