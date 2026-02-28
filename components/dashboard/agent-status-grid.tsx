@@ -34,22 +34,17 @@ function StatusDot({ status }: { status: AgentStatus }) {
   )
 }
 
-const FALLBACK_AGENTS: SwarmAgent[] = [
-  { id: "paper-collector", name: "Paper Collector", description: "Searches and summarizes papers", tools: [], status: "idle", task: "" },
-  { id: "implementer", name: "Implementer", description: "Reproduces papers in code", tools: [], status: "idle", task: "" },
-  { id: "research-director", name: "Research Director", description: "Identifies research directions", tools: [], status: "idle", task: "" },
-]
-
 export function AgentStatusGrid() {
-  const [agents, setAgents] = useState<SwarmAgent[]>(FALLBACK_AGENTS)
+  const [agents, setAgents] = useState<SwarmAgent[]>([])
   const [stats, setStats] = useState<DashboardStats | null>(null)
 
   const refresh = useCallback(async () => {
     try {
       const data = await fetchAgents()
       if (data.length > 0) setAgents(data)
+      else setAgents([])
     } catch {
-      // keep fallback
+      setAgents([])
     }
     if (supabaseConfigured) {
       try {
@@ -68,6 +63,13 @@ export function AgentStatusGrid() {
 
   return (
     <div className="space-y-3">
+      {agents.length === 0 ? (
+        <div className="flex items-center justify-center rounded-md border border-dashed border-muted-foreground/30 bg-muted/30 px-4 py-8">
+          <Badge variant="outline" className="font-mono text-[10px] text-muted-foreground">
+            TODO: Configure MODAL_ENDPOINT_URL to display agent status
+          </Badge>
+        </div>
+      ) : (
       <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
         {agents.map((agent) => {
           const Icon = agentIcons[agent.id] || BookOpen
@@ -97,6 +99,7 @@ export function AgentStatusGrid() {
           )
         })}
       </div>
+      )}
 
       {stats && (
         <div className="grid grid-cols-3 gap-3">

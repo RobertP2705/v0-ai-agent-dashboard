@@ -43,36 +43,22 @@ export function ApiCreditsView() {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
-            {[
-              { name: "Hugging Face (Qwen3-32B)", status: "active", key: "hf_...configured" },
-              { name: "Supabase", status: supabaseConfigured ? "active" : "missing", key: supabaseConfigured ? "sb_...configured" : "Not configured" },
-              { name: "Tavily Search API", status: "active", key: "tvly-...configured" },
-              { name: "GitHub API", status: "active", key: "ghp_...configured" },
-              { name: "Weights & Biases", status: "active", key: "wandb_...configured" },
-              { name: "ElevenLabs TTS", status: "placeholder", key: "Not configured" },
-            ].map((api) => (
-              <div
-                key={api.name}
-                className="flex items-center justify-between rounded-md border border-border bg-secondary/30 px-3 py-2"
-              >
+            {supabaseConfigured && (
+              <div className="flex items-center justify-between rounded-md border border-border bg-secondary/30 px-3 py-2">
                 <div>
-                  <p className="text-xs font-medium text-foreground">{api.name}</p>
-                  <p className="font-mono text-[10px] text-muted-foreground">{api.key}</p>
+                  <p className="text-xs font-medium text-foreground">Supabase</p>
+                  <p className="font-mono text-[10px] text-muted-foreground">sb_...configured</p>
                 </div>
-                <Badge
-                  variant="outline"
-                  className={
-                    api.status === "active"
-                      ? "border-success/30 bg-success/10 font-mono text-[10px] text-success"
-                      : api.status === "missing"
-                        ? "border-destructive/30 bg-destructive/10 font-mono text-[10px] text-destructive"
-                        : "border-warning/30 bg-warning/10 font-mono text-[10px] text-warning"
-                  }
-                >
-                  {api.status}
+                <Badge variant="outline" className="border-success/30 bg-success/10 font-mono text-[10px] text-success">
+                  connected
                 </Badge>
               </div>
-            ))}
+            )}
+            <div className="flex items-center justify-center rounded-md border border-dashed border-muted-foreground/30 bg-muted/30 px-3 py-4">
+              <Badge variant="outline" className="font-mono text-[10px] text-muted-foreground">
+                TODO: HuggingFace, Tavily, GitHub, W&B, ElevenLabs — status in Modal backend, not verified from dashboard
+              </Badge>
+            </div>
           </CardContent>
         </Card>
 
