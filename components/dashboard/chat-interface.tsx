@@ -35,6 +35,7 @@ import {
   type TaskEventRow,
   type Team,
 } from "@/lib/supabase"
+import { createClient as createSupabaseClient } from "@/lib/supabase/client"
 import {
   Select,
   SelectContent,
@@ -140,27 +141,29 @@ function pipelineSteps(status: ChatMessage["status"], events: LogEntry[]): Stepp
   ]
 }
 
-// ── Storage key ───────────────────────────────────────────────────────────
+// ── Storage key (user-specific) ───────────────────────────────────────────
 
-const STORAGE_KEY = "magi-chat-messages"
+function getStorageKey(userId: string | null) {
+  return `magi-chat-messages-${userId ?? "anonymous"}`
+}
 
-function loadPersistedMessages(): ChatMessage[] {
+function loadPersistedMessages(storageKey: string): ChatMessage[] {
   if (typeof window === "undefined") return []
   try {
-    const raw = localStorage.getItem(STORAGE_KEY)
+    const raw = localStorage.getItem(storageKey)
     return raw ? JSON.parse(raw) : []
   } catch {
     return []
   }
 }
 
-function persistMessages(msgs: ChatMessage[]) {
+function persistMessages(msgs: ChatMessage[], storageKey: string) {
   try {
     const toStore = msgs.slice(-100).map((m) => ({
       ...m,
       events: m.events.slice(-30),
     }))
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(toStore))
+    localStorage.setItem(storageKey, JSON.stringify(toStore))
   } catch {
     // storage full, ignore
   }
@@ -247,7 +250,8 @@ function ChatBubble({ message }: { message: ChatMessage }) {
 // ── Main component ────────────────────────────────────────────────────────
 
 export function ChatInterface() {
-  const [messages, setMessages] = useState<ChatMessage[]>(loadPersistedMessages)
+  const [userId, setUserId] = useState<string | null | undefined>(undefined)
+  const [messages, setMessages] = useState<ChatMessage[]>([])
   const [inputValue, setInputValue] = useState("")
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [teams, setTeams] = useState<Team[]>([])
@@ -257,6 +261,21 @@ export function ChatInterface() {
   const bottomRef = useRef<HTMLDivElement>(null)
   const activeTaskIdRef = useRef<string | null>(null)
   const activeTaskMsgIdRef = useRef<string | null>(null)
+  const loadedForUserRef = useRef<string | null | undefined>(undefined)
+
+  const storageKey = getStorageKey(userId ?? null)
+
+  // Resolve current user (for user-specific chat history)
+  useEffect(() => {
+    if (!supabaseConfigured) {
+      setUserId(null)
+      return
+    }
+    const supabase = createSupabaseClient()
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      setUserId(user?.id ?? null)
+    })
+  }, [])
 
   // Load teams on mount
   useEffect(() => {
@@ -266,11 +285,20 @@ export function ChatInterface() {
       .catch(() => {})
   }, [])
 
-  // Load history from Supabase on mount
+  // Load chat history for the current user (from localStorage, or Supabase if empty)
   useEffect(() => {
+    if (userId === undefined) return
+    if (loadedForUserRef.current === userId) return
+    loadedForUserRef.current = userId
+
+    const key = getStorageKey(userId)
+    const stored = loadPersistedMessages(key)
+    if (stored.length > 0) {
+      setMessages(stored)
+      return
+    }
+
     if (!supabaseConfigured) return
-    const stored = loadPersistedMessages()
-    if (stored.length > 0) return // already have local history
 
     fetchTasks(20)
       .then(async (tasks) => {
@@ -309,17 +337,17 @@ export function ChatInterface() {
         }
         if (restored.length > 0) {
           setMessages(restored)
-          persistMessages(restored)
+          persistMessages(restored, key)
         }
       })
       .catch(() => {})
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [userId])
 
-  // Persist on change
+  // Persist on change (to current user's key)
   useEffect(() => {
-    persistMessages(messages)
-  }, [messages])
+    if (userId === undefined) return
+    persistMessages(messages, storageKey)
+  }, [messages, storageKey, userId])
 
   // Auto-scroll
   useEffect(() => {
