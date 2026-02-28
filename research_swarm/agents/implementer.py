@@ -35,17 +35,6 @@ Guidelines:
 - IMPORTANT: After every sandbox execution, briefly summarize what the \
   output shows — key metrics, whether the run succeeded, any notable \
   observations or patterns in the results. This helps the user understand \
-<<<<<<< HEAD
-<<<<<<< HEAD
-  what happened without reading raw logs.
-- If the experiment produces metrics (loss, accuracy, etc.), use wandb_log \
-  to log them. Use the paper title or method name as the project name.
-- Use github_push to push the implementation to a GitHub repository. \
-  Include a README.md explaining what the code does and which paper it reproduces.
-- If the code fails, read the error carefully, fix the code, and retry.
-- Report final results: what worked, what metrics were achieved, and links \
-  to the W&B run and GitHub repo.
-=======
   what happened without reading raw logs. \
   Your sandbox wont have the required libraries installed, so you need to install them yourself.
 - BE PERSISTENT: If the code fails or produces bad results (NaN loss, \
@@ -62,34 +51,12 @@ Guidelines:
   approaches and believe the issue is fundamental to the method itself.
 - If the experiment produces metrics (loss, accuracy, etc.), use wandb_log \
   to log them. Use the paper title or method name as the project name.
-=======
-  what happened without reading raw logs. \
-  Your sandbox wont have the required libraries installed, so you need to install them yourself.
-- BE PERSISTENT: If the code fails or produces bad results (NaN loss, \
-  errors, poor metrics), diagnose the issue, fix the code, and re-run. \
-  Keep iterating until you get a working experiment with reasonable \
-  results. Common fixes include:
-  * Weight initialization (Xavier/He init instead of random)
-  * Gradient clipping
-  * Learning rate adjustments
-  * Fixing shape mismatches or numerical instability
-  * Adding missing dependencies to requirements
-  Only move on when: (a) the experiment runs successfully with \
-  meaningful results, or (b) you have exhausted at least 3 different \
-  approaches and believe the issue is fundamental to the method itself.
-- If the experiment produces metrics (loss, accuracy, etc.), use wandb_log \
-  to log them. Use the paper title or method name as the project name.
->>>>>>> b1d96c3 (wand working)
 - Try to use github_push to push the FINAL WORKING implementation to a \
   GitHub repository with a README.md. If github_push fails (e.g. missing \
   token), skip it and continue — do NOT stop or ask the user about it.
 - Always report final results even if some tools (W&B, GitHub) are \
   unavailable: summarize what worked, key metrics achieved, and include \
   any available links.
-<<<<<<< HEAD
->>>>>>> b1d96c3 (wand working)
-=======
->>>>>>> b1d96c3 (wand working)
 """
 
     def __init__(self, model_remote, task_id: str | None = None, instance_label: str | None = None):

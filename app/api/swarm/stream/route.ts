@@ -20,7 +20,7 @@ export async function POST(req: NextRequest) {
           const results = await searchMemories({
             q: query,
             containerTags: [user.id],
-            limit: 5,
+            limit: 10,
           })
           memoryContext = (results as { content?: string }[])
             .filter((r) => typeof r.content === "string")

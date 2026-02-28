@@ -5,7 +5,7 @@
 Defined in `research_swarm/config.py` (`AGENT_DEFINITIONS`) and implemented in `research_swarm/agents/`.
 
 | Agent ID | Name | Description | Tools |
-|----------|------|-------------|-------|
+|----------|------|-------------|-- -----|
 | `paper-collector` | Paper Collector | Scours web, Reddit, HN, Twitter, arXiv, Semantic Scholar for papers and resources | web_search, fetch_url, arxiv_search, semantic_scholar_search |
 | `implementer` | Implementer | Reproduces methods in code, runs experiments in Modal sandboxes, logs to W&B, pushes to GitHub | modal_sandbox, wandb_log, github_push |
 | `research-director` | Research Director | Identifies promising research directions from paper analysis | web_search, fetch_url, arxiv_search |
