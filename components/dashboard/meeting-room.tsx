@@ -235,10 +235,14 @@ export function MeetingRoom() {
               )
             })}
           </div>
-          <p className="mt-2 text-center font-mono text-[9px] text-muted-foreground">
-            ElevenLabs TTS Integration Placeholder - Connect API key to enable
-            voice synthesis
-          </p>
+          <div className="mt-2 flex flex-col items-center gap-1 rounded-md border border-dashed border-amber-500/40 bg-amber-500/5 px-3 py-2">
+            <Badge variant="outline" className="border-amber-500/50 bg-amber-500/10 font-mono text-[9px] text-amber-600 dark:text-amber-400">
+              MOCK — Placeholder
+            </Badge>
+            <p className="text-center font-mono text-[9px] text-muted-foreground">
+              ElevenLabs TTS Integration Placeholder - Connect API key to enable voice synthesis (not implemented)
+            </p>
+          </div>
         </CardContent>
       </Card>
 

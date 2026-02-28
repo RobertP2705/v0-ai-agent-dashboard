@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { DollarSign, Zap, CheckCircle2, ListTodo } from "lucide-react"
+import { Badge } from "@/components/ui/badge"
 import {
   supabaseConfigured,
   fetchDashboardStats,
@@ -54,10 +55,15 @@ export function ApiMonitor() {
   return (
     <Card className="border-border bg-card/80 backdrop-blur-sm">
       <CardHeader className="pb-2">
-        <CardTitle className="flex items-center gap-2 text-sm font-medium">
-          <Zap className="h-3.5 w-3.5 text-warning" />
-          API Monitor
-        </CardTitle>
+        <div className="flex items-center justify-between gap-2">
+          <CardTitle className="flex items-center gap-2 text-sm font-medium">
+            <Zap className="h-3.5 w-3.5 text-warning" />
+            API Monitor
+          </CardTitle>
+          <Badge variant="outline" className="border-success/30 bg-success/10 font-mono text-[9px] text-success">
+            ✓ Real data from Supabase
+          </Badge>
+        </div>
       </CardHeader>
       <CardContent>
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">

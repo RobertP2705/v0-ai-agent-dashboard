@@ -42,13 +42,20 @@ const FALLBACK_AGENTS: SwarmAgent[] = [
 
 export function AgentStatusGrid() {
   const [agents, setAgents] = useState<SwarmAgent[]>(FALLBACK_AGENTS)
+  const [agentsFromApi, setAgentsFromApi] = useState(false)
   const [stats, setStats] = useState<DashboardStats | null>(null)
 
   const refresh = useCallback(async () => {
     try {
       const data = await fetchAgents()
-      if (data.length > 0) setAgents(data)
+      if (data.length > 0) {
+        setAgents(data)
+        setAgentsFromApi(true)
+      } else {
+        setAgentsFromApi(false)
+      }
     } catch {
+      setAgentsFromApi(false)
       // keep fallback
     }
     if (supabaseConfigured) {
@@ -68,6 +75,19 @@ export function AgentStatusGrid() {
 
   return (
     <div className="space-y-3">
+      <div className="flex items-center justify-between gap-2">
+        <Badge
+          variant="outline"
+          className={cn(
+            "font-mono text-[10px] uppercase",
+            agentsFromApi
+              ? "border-success/50 bg-success/10 text-success"
+              : "border-amber-500/50 bg-amber-500/10 text-amber-600 dark:text-amber-400"
+          )}
+        >
+          {agentsFromApi ? "Live from Modal API" : "Demo data (Modal offline or unreachable)"}
+        </Badge>
+      </div>
       <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
         {agents.map((agent) => {
           const Icon = agentIcons[agent.id] || BookOpen
@@ -99,7 +119,11 @@ export function AgentStatusGrid() {
       </div>
 
       {stats && (
-        <div className="grid grid-cols-3 gap-3">
+        <div className="space-y-2">
+          <p className="font-mono text-[10px] text-muted-foreground">
+            ✓ Real data from Supabase
+          </p>
+          <div className="grid grid-cols-3 gap-3">
           <div className="flex items-center gap-2 rounded-md border border-border bg-card/80 px-3 py-2">
             <FileText className="h-3.5 w-3.5 text-chart-1" />
             <div>
@@ -120,6 +144,7 @@ export function AgentStatusGrid() {
               <p className="font-mono text-[10px] text-muted-foreground">Directions</p>
               <p className="font-mono text-sm font-semibold">{stats.totalDirections}</p>
             </div>
+          </div>
           </div>
         </div>
       )}
