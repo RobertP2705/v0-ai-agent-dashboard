@@ -303,6 +303,7 @@ function CodeViewer({ code, language, stdout, stderr, exitCode }: {
 
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 function ToolCallCard({ event, resultEvent }: { event: LogEntry; resultEvent?: LogEntry }) {
   const [expanded, setExpanded] = useState(false)
   const [outputOpen, setOutputOpen] = useState(true)
@@ -314,10 +315,15 @@ function ToolCallCard({ event, resultEvent, autoExpand = false }: { event: LogEn
   const Icon = getToolIcon(tool)
   const isSandbox = tool === "modal_sandbox"
 =======
+=======
+>>>>>>> b1d96c3 (wand working)
 function SandboxCard({ event, resultEvent }: { event: LogEntry; resultEvent?: LogEntry }) {
   const [codeOpen, setCodeOpen] = useState(true)
   const [stdoutOpen, setStdoutOpen] = useState(true)
   const [copied, setCopied] = useState(false)
+<<<<<<< HEAD
+>>>>>>> b1d96c3 (wand working)
+=======
 >>>>>>> b1d96c3 (wand working)
   const code = event.meta?.code as string | undefined
   const exitCode = resultEvent?.meta?.exit_code as number | undefined
@@ -459,6 +465,7 @@ function ToolCallCard({ event, resultEvent, autoExpand = false }: { event: LogEn
       {expanded && (
         <div className="pl-2">
 <<<<<<< HEAD
+<<<<<<< HEAD
           {isSandbox && code ? (
             <CodeViewer code={code} exitCode={exitCode ?? null} />
           ) : (
@@ -474,6 +481,8 @@ function ToolCallCard({ event, resultEvent, autoExpand = false }: { event: LogEn
             </div>
           )}
 =======
+=======
+>>>>>>> b1d96c3 (wand working)
           <div className="mt-1 rounded-md border border-border bg-card/60 p-2">
             <pre className="max-h-[200px] overflow-auto font-mono text-[10px] text-foreground/70 whitespace-pre-wrap">
               {JSON.stringify(event.meta?.args || event.meta, null, 2)}
@@ -484,6 +493,9 @@ function ToolCallCard({ event, resultEvent, autoExpand = false }: { event: LogEn
               </p>
             )}
           </div>
+<<<<<<< HEAD
+>>>>>>> b1d96c3 (wand working)
+=======
 >>>>>>> b1d96c3 (wand working)
         </div>
       )}
