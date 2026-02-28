@@ -18,8 +18,8 @@ AGENT_DEFINITIONS = {
     },
     "implementer": {
         "name": "Implementer",
-        "description": "Reproduces paper methods in code, runs experiments in Modal sandboxes, logs to W&B, and pushes to GitHub.",
-        "tools": ["modal_sandbox", "wandb_log", "github_push"],
+        "description": "Reproduces paper methods in code, runs experiments in Modal sandboxes, logs to W&B, and pushes to GitHub. Reads codebases (fetch_url) before implementing; uses web_search to find correct repo URLs.",
+        "tools": ["web_search", "fetch_url", "modal_sandbox", "wandb_log", "github_push"],
     },
     "research-director": {
         "name": "Research Director",
