@@ -2,7 +2,7 @@ import { NextRequest } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { searchMemories } from "@/lib/supermemory"
 
-export const maxDuration = 900
+export const maxDuration = 800
 
 const MODAL_URL = process.env.MODAL_ENDPOINT_URL || "http://localhost:8000"
 
@@ -20,7 +20,7 @@ export async function POST(req: NextRequest) {
           const results = await searchMemories({
             q: query,
             containerTags: [user.id],
-            limit: 5,
+            limit: 10,
           })
           memoryContext = (results as { content?: string }[])
             .filter((r) => typeof r.content === "string")

@@ -1,10 +1,14 @@
 "use client"
 
-import { useState, useEffect, useRef, useMemo } from "react"
+import { useState, useEffect, useRef, useMemo, useCallback } from "react"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
+import { Prism as SyntaxHighlighter } from "react-syntax-highlighter"
+import { oneDark } from "react-syntax-highlighter/dist/cjs/styles/prism"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable"
+import { ResizableCard } from "@/components/ui/resizable-card"
 import {
   Collapsible,
   CollapsibleContent,
@@ -29,8 +33,11 @@ import {
   User,
   Copy,
   Check,
-  Database,
+  Trash2,
+  BookOpen,
+  Compass,
 } from "lucide-react"
+import { SupermemoryIcon } from "@/components/ui/supermemory-icon"
 import { StatusStepper } from "./status-stepper"
 import type { LogEntry, StepperStep } from "@/lib/simulation-data"
 import { getAgentColor } from "@/lib/simulation-data"
@@ -44,6 +51,7 @@ import {
   type Team,
 } from "@/lib/supabase"
 import { createClient as createSupabaseClient } from "@/lib/supabase/client"
+import { useStreaming } from "@/lib/streaming-context"
 import {
   Select,
   SelectContent,
@@ -218,6 +226,48 @@ function persistMessages(msgs: ChatMessage[], storageKey: string) {
   } catch { /* storage full */ }
 }
 
+// ── Markdown code block with copy + syntax highlighting ──────────────────
+
+function MarkdownCodeBlock({ language, children }: { language?: string; children: string }) {
+  const [copied, setCopied] = useState(false)
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(children)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
+  return (
+    <div className="my-2 rounded-md border border-border overflow-hidden">
+      <div className="flex items-center justify-between bg-secondary/80 px-3 py-1">
+        <span className="font-mono text-[10px] text-muted-foreground">{language || "code"}</span>
+        <button
+          onClick={handleCopy}
+          className="flex items-center gap-1 text-muted-foreground hover:text-foreground transition-colors"
+        >
+          {copied ? <Check className="h-3 w-3 text-success" /> : <Copy className="h-3 w-3" />}
+          <span className="font-mono text-[9px]">{copied ? "Copied" : "Copy"}</span>
+        </button>
+      </div>
+      <SyntaxHighlighter
+        language={language || "text"}
+        style={oneDark}
+        customStyle={{
+          margin: 0,
+          padding: "0.75rem",
+          fontSize: "11px",
+          lineHeight: "1.6",
+          background: "oklch(0.16 0.007 260 / 0.8)",
+          borderRadius: 0,
+        }}
+        wrapLongLines
+      >
+        {children}
+      </SyntaxHighlighter>
+    </div>
+  )
+}
+
 // ── Markdown ──────────────────────────────────────────────────────────────
 
 function Md({ children }: { children: string }) {
@@ -231,13 +281,33 @@ function Md({ children }: { children: string }) {
       prose-strong:text-foreground prose-strong:font-semibold
       prose-em:text-foreground/70
       prose-code:text-[11px] prose-code:bg-secondary prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-code:text-primary
-      prose-pre:bg-secondary/80 prose-pre:rounded-md prose-pre:text-[11px] prose-pre:my-2
+      prose-pre:bg-transparent prose-pre:p-0 prose-pre:my-0
       prose-a:text-primary prose-a:underline prose-a:underline-offset-2
       prose-blockquote:border-l-primary/40 prose-blockquote:text-foreground/60 prose-blockquote:text-xs
       prose-hr:border-border prose-hr:my-2
       prose-table:text-xs prose-th:text-foreground prose-td:text-foreground/80
     ">
-      <ReactMarkdown remarkPlugins={[remarkGfm]}>{children}</ReactMarkdown>
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={{
+          pre({ children }) {
+            return <>{children}</>
+          },
+          code({ className, children, ...props }) {
+            const match = /language-(\w+)/.exec(className || "")
+            const codeStr = String(children).replace(/\n$/, "")
+            if (match) {
+              return <MarkdownCodeBlock language={match[1]}>{codeStr}</MarkdownCodeBlock>
+            }
+            if (codeStr.includes("\n")) {
+              return <MarkdownCodeBlock>{codeStr}</MarkdownCodeBlock>
+            }
+            return <code className={className} {...props}>{children}</code>
+          },
+        }}
+      >
+        {children}
+      </ReactMarkdown>
     </div>
   )
 }
@@ -260,7 +330,7 @@ function CodeViewer({ code, language, stdout, stderr, exitCode }: {
   }
 
   return (
-    <div className="mt-1 rounded-md border border-border bg-card/80 overflow-hidden">
+    <ResizableCard className="mt-1 rounded-md border border-border bg-card/80 overflow-hidden" defaultHeight={260} minHeight={80} maxHeight={800}>
       <div className="flex items-center justify-between border-b border-border px-2 py-1">
         <div className="flex items-center gap-2">
           <Terminal className="h-3 w-3 text-chart-2" />
@@ -278,53 +348,45 @@ function CodeViewer({ code, language, stdout, stderr, exitCode }: {
           <span className="font-mono text-[9px]">{copied ? "Copied" : "Copy"}</span>
         </button>
       </div>
-      <pre className="max-h-[300px] overflow-auto p-2 font-mono text-[11px] text-foreground/80 leading-relaxed">
-        <code>{code}</code>
-      </pre>
+      <SyntaxHighlighter
+        language={language || "python"}
+        style={oneDark}
+        customStyle={{
+          margin: 0,
+          padding: "0.5rem",
+          fontSize: "11px",
+          lineHeight: "1.6",
+          background: "transparent",
+          borderRadius: 0,
+        }}
+        wrapLongLines
+      >
+        {code}
+      </SyntaxHighlighter>
       {(stdout || stderr) && (
         <div className="border-t border-border">
           {stdout && (
-            <pre className="max-h-[150px] overflow-auto p-2 font-mono text-[10px] text-foreground/60 leading-relaxed bg-secondary/30">
+            <pre className="overflow-auto p-2 font-mono text-[10px] text-foreground/60 leading-relaxed bg-secondary/30">
               <code>{stdout}</code>
             </pre>
           )}
           {stderr && (
-            <pre className="max-h-[100px] overflow-auto p-2 font-mono text-[10px] text-destructive/80 leading-relaxed bg-destructive/5">
+            <pre className="overflow-auto p-2 font-mono text-[10px] text-destructive/80 leading-relaxed bg-destructive/5">
               <code>{stderr}</code>
             </pre>
           )}
         </div>
       )}
-    </div>
+    </ResizableCard>
   )
 }
 
 // ── Tool call card ────────────────────────────────────────────────────────
 
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-function ToolCallCard({ event, resultEvent }: { event: LogEntry; resultEvent?: LogEntry }) {
-  const [expanded, setExpanded] = useState(false)
-  const [outputOpen, setOutputOpen] = useState(true)
-=======
-function ToolCallCard({ event, resultEvent, autoExpand = false }: { event: LogEntry; resultEvent?: LogEntry; autoExpand?: boolean }) {
-  const [expanded, setExpanded] = useState(autoExpand)
->>>>>>> 34c13fcdd4c79f8be4d9a02990e8f11b207fbbf3
-  const tool = (event.meta?.tool as string) || ""
-  const Icon = getToolIcon(tool)
-  const isSandbox = tool === "modal_sandbox"
-=======
-=======
->>>>>>> b1d96c3 (wand working)
 function SandboxCard({ event, resultEvent }: { event: LogEntry; resultEvent?: LogEntry }) {
   const [codeOpen, setCodeOpen] = useState(true)
   const [stdoutOpen, setStdoutOpen] = useState(true)
   const [copied, setCopied] = useState(false)
-<<<<<<< HEAD
->>>>>>> b1d96c3 (wand working)
-=======
->>>>>>> b1d96c3 (wand working)
   const code = event.meta?.code as string | undefined
   const exitCode = resultEvent?.meta?.exit_code as number | undefined
   const stdout = resultEvent?.meta?.stdout as string | undefined
@@ -370,9 +432,23 @@ function SandboxCard({ event, resultEvent }: { event: LogEntry; resultEvent?: Lo
             <ChevronDown className={cn("h-2.5 w-2.5 text-muted-foreground transition-transform", !codeOpen && "-rotate-90")} />
           </CollapsibleTrigger>
           <CollapsibleContent>
-            <pre className="max-h-[300px] overflow-auto p-2 font-mono text-[11px] text-foreground/80 leading-relaxed bg-card/60">
-              <code>{code}</code>
-            </pre>
+            <div className="max-h-[300px] overflow-auto bg-card/60">
+              <SyntaxHighlighter
+                language="python"
+                style={oneDark}
+                customStyle={{
+                  margin: 0,
+                  padding: "0.5rem",
+                  fontSize: "11px",
+                  lineHeight: "1.6",
+                  background: "transparent",
+                  borderRadius: 0,
+                }}
+                wrapLongLines
+              >
+                {code}
+              </SyntaxHighlighter>
+            </div>
           </CollapsibleContent>
         </Collapsible>
       )}
@@ -428,61 +504,8 @@ function ToolCallCard({ event, resultEvent, autoExpand = false }: { event: LogEn
         <ChevronRight className={cn("h-3 w-3 shrink-0 text-muted-foreground transition-transform", expanded && "rotate-90")} />
       </button>
 
-      {isSandbox && (stdout || stderr) && (
-        <div className="mt-1 pl-2 space-y-1">
-          {stdout && (
-            <Collapsible open={outputOpen} onOpenChange={setOutputOpen}>
-              <div className={cn("rounded-md border overflow-hidden",
-                exitCode === 0 ? "border-success/20" : "border-border"
-              )}>
-                <CollapsibleTrigger className="w-full flex items-center gap-1.5 px-2 py-1 bg-secondary/40 hover:bg-secondary/60 transition-colors">
-                  <Terminal className="h-2.5 w-2.5 text-chart-2" />
-                  <span className="font-mono text-[9px] text-muted-foreground flex-1 text-left">Sandbox Output</span>
-                  <ChevronDown className={cn("h-2.5 w-2.5 text-muted-foreground transition-transform", !outputOpen && "-rotate-90")} />
-                </CollapsibleTrigger>
-                <CollapsibleContent>
-                  <pre className="max-h-[200px] overflow-auto p-2 font-mono text-[10px] text-foreground/70 leading-relaxed bg-secondary/20">
-                    <code>{stdout}</code>
-                  </pre>
-                </CollapsibleContent>
-              </div>
-            </Collapsible>
-          )}
-          {stderr && (
-            <div className="rounded-md border border-destructive/20 bg-destructive/5 overflow-hidden">
-              <div className="flex items-center gap-1.5 px-2 py-1 bg-destructive/10">
-                <AlertTriangle className="h-2.5 w-2.5 text-destructive" />
-                <span className="font-mono text-[9px] text-destructive/80">Error Output</span>
-              </div>
-              <pre className="max-h-[150px] overflow-auto p-2 font-mono text-[10px] text-destructive/80 leading-relaxed">
-                <code>{stderr}</code>
-              </pre>
-            </div>
-          )}
-        </div>
-      )}
-
       {expanded && (
         <div className="pl-2">
-<<<<<<< HEAD
-<<<<<<< HEAD
-          {isSandbox && code ? (
-            <CodeViewer code={code} exitCode={exitCode ?? null} />
-          ) : (
-            <div className="mt-1 rounded-md border border-border bg-card/60 p-2">
-              <pre className="max-h-[200px] overflow-auto font-mono text-[10px] text-foreground/70 whitespace-pre-wrap">
-                {JSON.stringify(event.meta?.args || event.meta, null, 2)}
-              </pre>
-              {resultEvent && (
-                <p className="mt-1 font-mono text-[10px] text-muted-foreground border-t border-border pt-1">
-                  {resultEvent.message}
-                </p>
-              )}
-            </div>
-          )}
-=======
-=======
->>>>>>> b1d96c3 (wand working)
           <div className="mt-1 rounded-md border border-border bg-card/60 p-2">
             <pre className="max-h-[200px] overflow-auto font-mono text-[10px] text-foreground/70 whitespace-pre-wrap">
               {JSON.stringify(event.meta?.args || event.meta, null, 2)}
@@ -493,10 +516,6 @@ function ToolCallCard({ event, resultEvent, autoExpand = false }: { event: LogEn
               </p>
             )}
           </div>
-<<<<<<< HEAD
->>>>>>> b1d96c3 (wand working)
-=======
->>>>>>> b1d96c3 (wand working)
         </div>
       )}
     </div>
@@ -600,8 +619,12 @@ function AgentBubble({ group, isActive }: { group: AgentMessageGroup; isActive: 
                       <ChevronDown className="h-3 w-3" />
                       View response
                     </CollapsibleTrigger>
-                    <CollapsibleContent className="mt-1 rounded-md border border-border bg-card/60 p-2 max-h-[300px] overflow-y-auto">
-                      <Md>{item.event.message}</Md>
+                    <CollapsibleContent className="mt-1">
+                      <ResizableCard className="rounded-md border border-border bg-card/60" defaultHeight={240} minHeight={80} maxHeight={800}>
+                        <div className="p-2">
+                          <Md>{item.event.message}</Md>
+                        </div>
+                      </ResizableCard>
                     </CollapsibleContent>
                   </Collapsible>
                 )
@@ -669,8 +692,8 @@ function ChatBubble({ message }: { message: ChatMessage }) {
         <div className="flex items-center gap-1.5">
           {message.memorySaved && (
             <Badge variant="outline" className="font-mono text-[9px] px-1.5 py-0 border-primary/40 bg-primary/10 text-primary" title="Saved to Supermemory">
-              <Database className="h-2.5 w-2.5 mr-0.5" />
-              Saved to memory
+              <SupermemoryIcon className="h-2.5 w-2.5 mr-0.5" />
+              Saved to Supermemory
             </Badge>
           )}
           {isStreaming && (
@@ -699,13 +722,15 @@ function ChatBubble({ message }: { message: ChatMessage }) {
       )}
 
       {hasFinalResult && (
-        <div className="rounded-md border border-border bg-card/60 p-3 max-h-[28rem] overflow-y-auto">
-          <div className="flex items-center gap-1.5 mb-2">
-            <Brain className="h-3 w-3 text-primary" />
-            <span className="font-mono text-[10px] font-medium text-primary">Synthesized Report</span>
+        <ResizableCard className="rounded-md border border-border bg-card/60" defaultHeight={320} minHeight={100} maxHeight={900}>
+          <div className="p-3">
+            <div className="flex items-center gap-1.5 mb-2">
+              <Brain className="h-3 w-3 text-primary" />
+              <span className="font-mono text-[10px] font-medium text-primary">Synthesized Report</span>
+            </div>
+            <Md>{message.summary}</Md>
           </div>
-          <Md>{message.summary}</Md>
-        </div>
+        </ResizableCard>
       )}
 
       {message.status === "error" && (
@@ -786,7 +811,47 @@ function LiveStats({ eventCount, agentCount, startTime }: { eventCount: number; 
   )
 }
 
+// ── Compact agent status indicator for fullscreen research tab ────────────
+
+const agentDefs: { id: string; label: string; icon: React.ElementType }[] = [
+  { id: "paper-collector", label: "Paper Collector", icon: BookOpen },
+  { id: "implementer", label: "Implementer", icon: Terminal },
+  { id: "research-director", label: "Research Director", icon: Compass },
+]
+
+function AgentStatusBar() {
+  const { isStreaming, activeAgents } = useStreaming()
+  return (
+    <div className="flex items-center gap-1.5">
+      {agentDefs.map(({ id, label, icon: Icon }) => {
+        const busy = isStreaming && activeAgents.includes(id)
+        return (
+          <div
+            key={id}
+            className={cn(
+              "flex items-center gap-1 rounded-full px-2 py-0.5 font-mono text-[9px] transition-colors",
+              busy
+                ? "bg-success/15 text-success border border-success/30"
+                : "bg-secondary/50 text-muted-foreground border border-transparent"
+            )}
+            title={`${label}: ${busy ? "busy" : "idle"}`}
+          >
+            {busy ? (
+              <Loader2 className="h-2.5 w-2.5 animate-spin" />
+            ) : (
+              <Icon className="h-2.5 w-2.5" />
+            )}
+            <span className="hidden sm:inline">{label.split(" ")[0]}</span>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 // ── Main component ────────────────────────────────────────────────────────
+
+let nextMsgId = 0
 
 export function ChatInterface({ fullscreen = false }: { fullscreen?: boolean }) {
   const [userId, setUserId] = useState<string | null | undefined>(undefined)
@@ -804,6 +869,8 @@ export function ChatInterface({ fullscreen = false }: { fullscreen?: boolean }) 
   const savedToMemoryRef = useRef<Set<string>>(new Set())
   const [memoryEnabled, setMemoryEnabled] = useState(false)
   const [streamStartTime, setStreamStartTime] = useState<number | null>(null)
+  const { setStreamingState } = useStreaming()
+  const activeAgentsRef = useRef<Set<string>>(new Set())
 
   const storageKey = getStorageKey(userId ?? null)
 
@@ -834,6 +901,9 @@ export function ChatInterface({ fullscreen = false }: { fullscreen?: boolean }) 
     const key = getStorageKey(userId)
     const stored = loadPersistedMessages(key)
     if (stored.length > 0) {
+      for (const m of stored) {
+        if (m.memorySaved) savedToMemoryRef.current.add(m.id)
+      }
       setMessages(stored)
       return
     }
@@ -863,11 +933,29 @@ export function ChatInterface({ fullscreen = false }: { fullscreen?: boolean }) 
     persistMessages(messages, storageKey)
   }, [messages, storageKey, userId])
 
-  // Save completed research tasks to Supermemory (per-user memory)
+  // Save user messages and completed research tasks to Supermemory
   useEffect(() => {
     if (userId === undefined || !userId) return
     for (const m of messages) {
-      if (m.type !== "task" || m.status !== "completed" || savedToMemoryRef.current.has(m.id)) continue
+      if (savedToMemoryRef.current.has(m.id)) continue
+
+      if (m.type === "user") {
+        const query = m.query?.trim()
+        if (!query) continue
+        savedToMemoryRef.current.add(m.id)
+        fetch("/api/memory/add", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            content: `User query: ${query}`,
+            metadata: { type: "user_message" },
+            title: query.slice(0, 100),
+          }),
+        }).catch(() => {})
+        continue
+      }
+
+      if (m.type !== "task" || m.status !== "completed") continue
       const summary = m.summary?.trim() || ""
       if (!summary && !m.query?.trim()) continue
       savedToMemoryRef.current.add(m.id)
@@ -891,15 +979,29 @@ export function ChatInterface({ fullscreen = false }: { fullscreen?: boolean }) 
     }
   }, [messages, userId])
 
-  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }) }, [messages])
+  const userScrolledUpRef = useRef(false)
+
+  useEffect(() => {
+    if (!userScrolledUpRef.current) {
+      bottomRef.current?.scrollIntoView({ behavior: "smooth" })
+    }
+  }, [messages])
+
+  const handleScroll = useCallback(() => {
+    const viewport = scrollRef.current?.querySelector("[data-radix-scroll-area-viewport]") as HTMLElement | null
+    if (!viewport) return
+    const distFromBottom = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight
+    userScrolledUpRef.current = distFromBottom > 150
+  }, [])
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     if (!inputValue.trim() || isSubmitting) return
     const query = inputValue.trim()
     const now = formatTime()
-    const userMsg: ChatMessage = { id: `user-${Date.now()}`, type: "user", query, status: "completed", summary: "", events: [], timestamp: now }
-    const taskMsg: ChatMessage = { id: `task-${Date.now()}`, type: "task", query, status: "streaming", summary: "", events: [], timestamp: now }
+    const seq = ++nextMsgId
+    const userMsg: ChatMessage = { id: `user-${Date.now()}-${seq}`, type: "user", query, status: "completed", summary: "", events: [], timestamp: now }
+    const taskMsg: ChatMessage = { id: `task-${Date.now()}-${seq}`, type: "task", query, status: "streaming", summary: "", events: [], timestamp: now }
     setMessages((prev) => [...prev, userMsg, taskMsg])
     setInputValue("")
     setIsSubmitting(true)
@@ -907,11 +1009,21 @@ export function ChatInterface({ fullscreen = false }: { fullscreen?: boolean }) 
     abortRef.current?.abort()
     activeTaskIdRef.current = null
     activeTaskMsgIdRef.current = taskMsg.id
+    activeAgentsRef.current = new Set()
+    setStreamingState({ isStreaming: true, activeAgents: [] })
     abortRef.current = streamResearch(
       query,
       (event) => {
         if (event.task_id) activeTaskIdRef.current = event.task_id
         const log = swarmEventToLog(event)
+        // Update streaming context outside of setState to avoid side-effects in updater
+        if (event.agent && event.agent !== "system" && event.agent !== "User") {
+          const id = event.agent.replace(/ #\d+$/, "").toLowerCase().replace(/\s+/g, "-")
+          if (!activeAgentsRef.current.has(id)) {
+            activeAgentsRef.current.add(id)
+            setStreamingState({ isStreaming: true, activeAgents: [...activeAgentsRef.current] })
+          }
+        }
         setMessages((prev) => {
           const updated = [...prev]
           const idx = updated.findIndex((m) => m.id === taskMsg.id)
@@ -921,13 +1033,20 @@ export function ChatInterface({ fullscreen = false }: { fullscreen?: boolean }) 
           msg.summary = extractSummary(msg.events)
           if (event.task_id) msg.taskId = event.task_id
           updated[idx] = msg
+          // Push current events to StreamingContext for MeetingRoom
+          setStreamingState({ currentEvents: msg.events })
           return updated
         })
       },
       () => {
-        activeTaskIdRef.current = null; activeTaskMsgIdRef.current = null; setStreamStartTime(null)
+        activeTaskIdRef.current = null
+        activeTaskMsgIdRef.current = null
+        setStreamStartTime(null)
+        activeAgentsRef.current = new Set()
+        setStreamingState({ isStreaming: false, activeAgents: [] })
         setMessages((prev) => {
-          const updated = [...prev]; const idx = updated.findIndex((m) => m.id === taskMsg.id)
+          const updated = [...prev]
+          const idx = updated.findIndex((m) => m.id === taskMsg.id)
           if (idx === -1) return prev
           const msg = updated[idx]
           const hasResult = msg.events.some((e) => e.type === "result")
@@ -942,11 +1061,17 @@ export function ChatInterface({ fullscreen = false }: { fullscreen?: boolean }) 
         setIsSubmitting(false)
       },
       (err) => {
-        activeTaskIdRef.current = null; activeTaskMsgIdRef.current = null; setStreamStartTime(null)
+        activeTaskIdRef.current = null
+        activeTaskMsgIdRef.current = null
+        setStreamStartTime(null)
+        activeAgentsRef.current = new Set()
+        setStreamingState({ isStreaming: false, activeAgents: [] })
         setMessages((prev) => {
-          const updated = [...prev]; const idx = updated.findIndex((m) => m.id === taskMsg.id)
+          const updated = [...prev]
+          const idx = updated.findIndex((m) => m.id === taskMsg.id)
           if (idx === -1) return prev
-          updated[idx] = { ...updated[idx], status: "error", summary: `Error: ${err.message}` }; return updated
+          updated[idx] = { ...updated[idx], status: "error", summary: `Error: ${err.message}` }
+          return updated
         })
         setIsSubmitting(false)
       },
@@ -955,21 +1080,46 @@ export function ChatInterface({ fullscreen = false }: { fullscreen?: boolean }) 
   }
 
   const handleCancel = async () => {
-    abortRef.current?.abort(); abortRef.current = null
+    abortRef.current?.abort()
+    abortRef.current = null
     if (activeTaskIdRef.current) cancelTask(activeTaskIdRef.current).catch(() => {})
     if (activeTaskMsgIdRef.current) {
       setMessages((prev) => {
-        const updated = [...prev]; const idx = updated.findIndex((m) => m.id === activeTaskMsgIdRef.current)
+        const updated = [...prev]
+        const idx = updated.findIndex((m) => m.id === activeTaskMsgIdRef.current)
         if (idx === -1) return prev
-        updated[idx] = { ...updated[idx], status: "error", summary: "Cancelled by user" }; return updated
+        updated[idx] = { ...updated[idx], status: "error", summary: "Cancelled by user" }
+        return updated
       })
     }
-    activeTaskIdRef.current = null; activeTaskMsgIdRef.current = null; setIsSubmitting(false); setStreamStartTime(null)
+    activeTaskIdRef.current = null
+    activeTaskMsgIdRef.current = null
+    activeAgentsRef.current = new Set()
+    setIsSubmitting(false)
+    setStreamStartTime(null)
+    setStreamingState({ isStreaming: false, activeAgents: [], currentEvents: [] })
   }
+
+  const handleClearHistory = () => {
+    if (isSubmitting) return
+    setMessages([])
+    savedToMemoryRef.current = new Set()
+    try { localStorage.removeItem(storageKey) } catch {}
+  }
+
+  // Keep StreamingContext.currentEvents in sync with the latest task's events
+  // This ensures MeetingRoom can show events even when navigating after a task completes
+  useEffect(() => {
+    if (isSubmitting) return // don't overwrite during active stream
+    const latest = [...messages].reverse().find((m) => m.type === "task")
+    if (latest && latest.events.length > 0) {
+      setStreamingState({ currentEvents: latest.events })
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [messages.length])
 
   // Derive data for fullscreen top bar
   const latestTask = [...messages].reverse().find((m) => m.type === "task")
-  const activeSteps = latestTask ? pipelineSteps(latestTask.status, latestTask.events) : null
   const latestTaskGroups = latestTask ? buildAgentGroups(latestTask.events) : []
   const currentStreamEvents = latestTask?.events ?? []
 
@@ -985,26 +1135,44 @@ export function ChatInterface({ fullscreen = false }: { fullscreen?: boolean }) 
 
   const inputBar = (
     <form onSubmit={handleSubmit} className="flex items-center gap-2 border-t border-border p-3">
+      {messages.length > 0 && !isSubmitting && (
+        <button
+          type="button"
+          onClick={handleClearHistory}
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border bg-secondary text-muted-foreground transition-colors hover:bg-destructive/20 hover:text-destructive"
+          title="Clear chat history"
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+        </button>
+      )}
       <input
         type="text" value={inputValue} onChange={(e) => setInputValue(e.target.value)}
         placeholder="Send a research query to the swarm..."
         className="flex-1 rounded-md border border-border bg-secondary px-3 py-2 font-mono text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
       />
       {isSubmitting ? (
-        <button type="button" onClick={handleCancel} className="flex h-8 w-8 items-center justify-center rounded-md bg-destructive text-destructive-foreground transition-colors hover:bg-destructive/80" title="Stop task">
+        <button type="button" onClick={handleCancel} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-destructive text-destructive-foreground transition-colors hover:bg-destructive/80" title="Stop task">
           <Square className="h-3.5 w-3.5" />
         </button>
       ) : (
-        <button type="submit" className="flex h-8 w-8 items-center justify-center rounded-md bg-primary text-primary-foreground transition-colors hover:bg-primary/80 disabled:opacity-50">
+        <button type="submit" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground transition-colors hover:bg-primary/80 disabled:opacity-50">
           <Send className="h-3.5 w-3.5" />
         </button>
       )}
     </form>
   )
 
+  // Attach scroll listener to the Radix viewport
+  useEffect(() => {
+    const viewport = scrollRef.current?.querySelector("[data-radix-scroll-area-viewport]") as HTMLElement | null
+    if (!viewport) return
+    viewport.addEventListener("scroll", handleScroll, { passive: true })
+    return () => viewport.removeEventListener("scroll", handleScroll)
+  }, [handleScroll])
+
   const messageList = (
-    <ScrollArea className="min-h-0 flex-1 overflow-hidden p-3" ref={scrollRef}>
-      <div className="space-y-3">
+    <ScrollArea className="min-h-0 flex-1 overflow-hidden" ref={scrollRef}>
+      <div className="space-y-3 p-3">
         {messages.length === 0 && (
           <p className="py-12 text-center font-mono text-xs text-muted-foreground">Send a research query to get started.</p>
         )}
@@ -1018,13 +1186,12 @@ export function ChatInterface({ fullscreen = false }: { fullscreen?: boolean }) 
     return (
       <div className="flex h-full flex-col rounded-lg border border-border bg-card/80 backdrop-blur-sm">
         {/* ── Top bar ─────────────────────────────────── */}
-        <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3">
+        <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-2">
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-2">
               <Brain className="h-4 w-4 text-primary" />
               <span className="text-sm font-medium text-foreground">Research Console</span>
             </div>
-            {activeSteps && <StatusStepper steps={activeSteps} size="lg" />}
           </div>
           <div className="flex items-center gap-3">
             {isSubmitting && streamStartTime && (
@@ -1034,29 +1201,32 @@ export function ChatInterface({ fullscreen = false }: { fullscreen?: boolean }) 
                 startTime={streamStartTime}
               />
             )}
+            <AgentStatusBar />
             {memoryEnabled && (
               <Badge variant="secondary" className="font-mono text-[9px] px-1.5 py-0 bg-primary/15 text-primary border-primary/30" title="Supermemory is active">
-                <Database className="h-2.5 w-2.5 mr-1" />
-                Memory
+                <SupermemoryIcon className="h-2.5 w-2.5 mr-1" spinning={isSubmitting} />
+                Supermemory
               </Badge>
             )}
             {teamSelector}
           </div>
         </div>
 
-        {/* ── Main content: two columns ───────────────── */}
-        <div className="flex min-h-0 flex-1">
-          {/* Left: chat messages */}
-          <div className="flex min-w-0 flex-1 flex-col">
-            {messageList}
-            {inputBar}
-          </div>
-
-          {/* Right: event stream */}
-          <div className="hidden w-80 shrink-0 border-l border-border bg-card/40 lg:flex lg:flex-col">
-            <EventStreamPanel events={currentStreamEvents} />
-          </div>
-        </div>
+        {/* ── Main content: resizable two-column split ─── */}
+        <ResizablePanelGroup direction="horizontal" className="min-h-0 flex-1">
+          <ResizablePanel defaultSize={70} minSize={40}>
+            <div className="flex h-full flex-col">
+              {messageList}
+              {inputBar}
+            </div>
+          </ResizablePanel>
+          <ResizableHandle withHandle className="hidden lg:flex" />
+          <ResizablePanel defaultSize={30} minSize={15} className="hidden lg:block">
+            <div className="flex h-full flex-col bg-card/40">
+              <EventStreamPanel events={currentStreamEvents} />
+            </div>
+          </ResizablePanel>
+        </ResizablePanelGroup>
       </div>
     )
   }
@@ -1069,8 +1239,8 @@ export function ChatInterface({ fullscreen = false }: { fullscreen?: boolean }) 
           Research Console
           {memoryEnabled && (
             <Badge variant="secondary" className="font-mono text-[9px] px-1.5 py-0 bg-primary/15 text-primary border-primary/30" title="Supermemory is active — results are saved and used for context">
-              <Database className="h-2.5 w-2.5 mr-1" />
-              Memory
+              <SupermemoryIcon className="h-2.5 w-2.5 mr-1" spinning={isSubmitting} />
+              Supermemory
             </Badge>
           )}
         </CardTitle>

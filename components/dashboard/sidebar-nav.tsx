@@ -13,6 +13,7 @@ import {
   Users,
   LogOut,
   ChevronUp,
+  BookOpen,
 } from "lucide-react"
 import type { User } from "@supabase/supabase-js"
 import {
@@ -28,6 +29,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 const navItems = [
   { id: "overview", label: "Swarm Overview", icon: LayoutGrid },
   { id: "research", label: "Research", icon: Activity },
+  { id: "papers", label: "Papers Library", icon: BookOpen },
   { id: "teams", label: "Teams", icon: Users },
   { id: "meeting", label: "Research Meeting Room", icon: MessageSquare },
   { id: "credits", label: "API Credits", icon: CreditCard },

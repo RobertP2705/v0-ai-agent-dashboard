@@ -9,6 +9,7 @@ import { supabaseConfigured, fetchDashboardStats, fetchTeams, type DashboardStat
 import { fetchAgents, scaleAgent, type SwarmAgent } from "@/lib/swarm-client"
 import type { AgentStatus } from "@/lib/simulation-data"
 import { getStatusColor } from "@/lib/simulation-data"
+import { useStreaming } from "@/lib/streaming-context"
 
 const agentIcons: Record<string, React.ElementType> = {
   "paper-collector": BookOpen,
@@ -89,6 +90,7 @@ export function AgentStatusGrid() {
   const [stats, setStats] = useState<DashboardStats | null>(null)
   const [teams, setTeams] = useState<Team[]>([])
   const [selectedTeamId, setSelectedTeamId] = useState<string | null>(null)
+  const { isStreaming, activeAgents } = useStreaming()
 
   const selectedTeam = teams.find((t) => t.id === selectedTeamId)
 
@@ -120,11 +122,12 @@ export function AgentStatusGrid() {
     }
   }, [])
 
+  // Poll faster (3s) while streaming, normal (15s) otherwise
   useEffect(() => {
     refresh()
-    const interval = setInterval(refresh, 15000)
+    const interval = setInterval(refresh, isStreaming ? 3000 : 15000)
     return () => clearInterval(interval)
-  }, [refresh])
+  }, [refresh, isStreaming])
 
   return (
     <div className="space-y-3">
@@ -163,6 +166,8 @@ export function AgentStatusGrid() {
             {agents.map((agent) => {
               const Icon = agentIcons[agent.id] || BookOpen
               const count = getInstanceCount(agent.id)
+              const effectiveStatus: AgentStatus =
+                isStreaming && activeAgents.includes(agent.id) ? "busy" : agent.status
               return (
                 <Card key={agent.id} className="border-border bg-card/80 backdrop-blur-sm">
                   <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 space-y-0 pb-2">
@@ -190,16 +195,18 @@ export function AgentStatusGrid() {
                       )}
                       <Badge
                         variant="outline"
-                        className={cn("font-mono text-[10px] uppercase", getStatusColor(agent.status))}
+                        className={cn("font-mono text-[10px] uppercase", getStatusColor(effectiveStatus))}
                       >
-                        <StatusDot status={agent.status} />
-                        {agent.status}
+                        <StatusDot status={effectiveStatus} />
+                        {effectiveStatus}
                       </Badge>
                     </div>
                   </CardHeader>
                   <CardContent>
                     <p className="font-mono text-xs text-muted-foreground line-clamp-1">
-                      {agent.task || agent.description}
+                      {effectiveStatus === "busy" && isStreaming
+                        ? "Processing research query..."
+                        : agent.task || agent.description}
                     </p>
                   </CardContent>
                 </Card>
