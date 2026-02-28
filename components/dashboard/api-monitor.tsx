@@ -12,7 +12,12 @@ import {
 
 const COST_PER_TOKEN = 0.000015
 
-export function ApiMonitor() {
+interface ApiMonitorProps {
+  projectId?: string
+  teamId?: string
+}
+
+export function ApiMonitor({ projectId, teamId }: ApiMonitorProps = {}) {
   const [stats, setStats] = useState<DashboardStats | null>(null)
 
   const refresh = useCallback(async () => {

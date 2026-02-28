@@ -21,7 +21,7 @@ import {
   Loader2,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { supabaseConfigured, fetchPapers, type Paper } from "@/lib/supabase"
+import { supabaseConfigured, fetchPapers, fetchPapersForProject, type Paper } from "@/lib/supabase"
 
 function formatDate(dateStr: string): string {
   return new Date(dateStr).toLocaleDateString("en-US", {
@@ -128,7 +128,11 @@ function PaperCard({ paper }: { paper: Paper }) {
   )
 }
 
-export function PapersView() {
+interface PapersViewProps {
+  projectId?: string
+}
+
+export function PapersView({ projectId }: PapersViewProps = {}) {
   const [papers, setPapers] = useState<Paper[]>([])
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState("")
@@ -138,11 +142,14 @@ export function PapersView() {
       setLoading(false)
       return
     }
-    fetchPapers(200)
+    const loader = projectId
+      ? fetchPapersForProject(projectId, 200)
+      : fetchPapers(200)
+    loader
       .then(setPapers)
       .catch(() => {})
       .finally(() => setLoading(false))
-  }, [])
+  }, [projectId])
 
   const filtered = useMemo(() => {
     if (!searchQuery.trim()) return papers
