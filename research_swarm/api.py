@@ -41,6 +41,7 @@ web_app.add_middleware(
 class ResearchRequest(BaseModel):
     query: str
     team_id: str | None = None
+    memory_context: list[dict] | None = None
 
 class TeamCreate(BaseModel):
     name: str
@@ -184,7 +185,7 @@ async def submit_research(req: ResearchRequest) -> dict:
     model = Qwen3Model()
 
     def _run():
-        gen = run_research(req.query, model, team_id=req.team_id)
+        gen = run_research(req.query, model, team_id=req.team_id, memory_context=req.memory_context)
         for _ in gen:
             pass
 
@@ -199,7 +200,7 @@ async def submit_research_stream(req: ResearchRequest) -> StreamingResponse:
 
     def _run():
         try:
-            gen = run_research(req.query, model, team_id=req.team_id)
+            gen = run_research(req.query, model, team_id=req.team_id, memory_context=req.memory_context)
             for event in gen:
                 q.put(event)
         except Exception as exc:
