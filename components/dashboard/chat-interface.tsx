@@ -171,8 +171,28 @@ function getToolIcon(tool?: string) {
 
 // ── Storage (user-specific) ─────────────────────────────────────────────────
 
-function getStorageKey(userId: string | null) {
-  return `magi-chat-messages-${userId ?? "anonymous"}`
+const ANONYMOUS_ID_KEY = "magi-chat-anonymous-id"
+
+/** Per-browser anonymous id so unauthenticated users don't all share the same chat history. */
+function getAnonymousStorageId(): string {
+  if (typeof window === "undefined") return "anonymous"
+  try {
+    let id = localStorage.getItem(ANONYMOUS_ID_KEY)
+    if (!id) {
+      id =
+        (typeof crypto !== "undefined" && crypto.randomUUID?.()) ||
+        `anon-${Date.now()}-${Math.random().toString(36).slice(2)}`
+      localStorage.setItem(ANONYMOUS_ID_KEY, id)
+    }
+    return id
+  } catch {
+    return "anonymous"
+  }
+}
+
+function getStorageKey(userId: string | null): string {
+  if (userId) return `magi-chat-messages-${userId}`
+  return `magi-chat-messages-anonymous-${getAnonymousStorageId()}`
 }
 
 function loadPersistedMessages(storageKey: string): ChatMessage[] {
@@ -462,8 +482,10 @@ function ChatBubble({ message }: { message: ChatMessage }) {
 
   return (
     <div className="rounded-lg border border-border bg-secondary/10 p-3 space-y-2">
-      <div className="flex items-center justify-between">
-        <StatusStepper steps={steps} />
+      <div className="flex items-center justify-between gap-2">
+        <div className="min-w-0 overflow-x-auto">
+          <StatusStepper steps={steps} />
+        </div>
         <div className="flex items-center gap-1.5">
           {message.memorySaved && (
             <Badge variant="outline" className="font-mono text-[9px] px-1.5 py-0 border-primary/40 bg-primary/10 text-primary" title="Saved to Supermemory">
@@ -696,7 +718,7 @@ export function ChatInterface() {
 
   return (
     <Card className="flex h-full flex-col border-border bg-card/80 backdrop-blur-sm">
-      <CardHeader className="flex flex-row items-center justify-between gap-3 border-b border-border pb-3">
+      <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 border-b border-border pb-3 sm:gap-3">
         <CardTitle className="flex items-center gap-2 text-sm font-medium">
           <Brain className="h-3.5 w-3.5 text-primary" />
           Research Console
@@ -709,7 +731,7 @@ export function ChatInterface() {
         </CardTitle>
         {teams.length > 0 && (
           <Select value={selectedTeamId ?? "all"} onValueChange={(v) => setSelectedTeamId(v === "all" ? null : v)}>
-            <SelectTrigger className="h-8 w-[180px] font-mono text-[11px]" size="sm"><SelectValue placeholder="Team" /></SelectTrigger>
+            <SelectTrigger className="h-8 min-w-0 flex-1 font-mono text-[11px] sm:w-[180px] sm:flex-initial" size="sm"><SelectValue placeholder="Team" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all" className="font-mono text-xs">All agents (default)</SelectItem>
               {teams.map((t) => (<SelectItem key={t.id} value={t.id} className="font-mono text-xs">{t.name}</SelectItem>))}
