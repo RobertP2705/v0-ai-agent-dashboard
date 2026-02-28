@@ -2,7 +2,7 @@ import { NextRequest } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { searchMemories } from "@/lib/supermemory"
 
-export const maxDuration = 900
+export const maxDuration = 800
 
 const MODAL_URL = process.env.MODAL_ENDPOINT_URL || "http://localhost:8000"
 
