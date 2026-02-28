@@ -11,6 +11,7 @@ import { MeetingRoom } from "@/components/dashboard/meeting-room"
 import { ApiCreditsView } from "@/components/dashboard/api-credits-view"
 import { TeamsView } from "@/components/dashboard/teams-view"
 import { PapersView } from "@/components/dashboard/papers-view"
+import { KnowledgeGraphView } from "@/components/dashboard/knowledge-graph"
 import { StreamingProvider } from "@/lib/streaming-context"
 import { useIsMobile } from "@/components/ui/use-mobile"
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet"
@@ -76,6 +77,7 @@ export function DashboardShell() {
               <h2 className="truncate text-sm font-semibold text-foreground">
                 {activeView === "overview" && "Swarm Overview"}
                 {activeView === "research" && "Research Console"}
+                {activeView === "graph" && "Knowledge Graph"}
                 {activeView === "papers" && "Papers Library"}
                 {activeView === "teams" && "Research Teams"}
                 {activeView === "meeting" && "Research Meeting Room"}
@@ -86,6 +88,8 @@ export function DashboardShell() {
                   "Real-time agent monitoring and research console"}
                 {activeView === "research" &&
                   "Full-screen research console with live agent monitoring"}
+                {activeView === "graph" &&
+                  "Visualize memories, papers, and connections across your research"}
                 {activeView === "papers" &&
                   "Browse and search collected research papers"}
                 {activeView === "teams" &&
@@ -120,6 +124,11 @@ export function DashboardShell() {
           {activeView === "research" && (
             <div className="h-full">
               <ChatInterface fullscreen />
+            </div>
+          )}
+          {activeView === "graph" && (
+            <div className="h-full">
+              <KnowledgeGraphView />
             </div>
           )}
           {activeView === "papers" && <PapersView />}
