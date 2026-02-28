@@ -29,6 +29,7 @@ import {
   User,
   Copy,
   Check,
+  Database,
 } from "lucide-react"
 import { StatusStepper } from "./status-stepper"
 import type { LogEntry, StepperStep } from "@/lib/simulation-data"
@@ -62,6 +63,7 @@ interface ChatMessage {
   summary: string
   events: LogEntry[]
   timestamp: string
+  memorySaved?: boolean
 }
 
 interface AgentMessageGroup {
@@ -462,11 +464,19 @@ function ChatBubble({ message }: { message: ChatMessage }) {
     <div className="rounded-lg border border-border bg-secondary/10 p-3 space-y-2">
       <div className="flex items-center justify-between">
         <StatusStepper steps={steps} />
-        {isStreaming && (
-          <Badge variant="outline" className="animate-pulse border-success/30 bg-success/10 font-mono text-[10px] text-success">
-            LIVE
-          </Badge>
-        )}
+        <div className="flex items-center gap-1.5">
+          {message.memorySaved && (
+            <Badge variant="outline" className="font-mono text-[9px] px-1.5 py-0 border-primary/40 bg-primary/10 text-primary" title="Saved to Supermemory">
+              <Database className="h-2.5 w-2.5 mr-0.5" />
+              Saved to memory
+            </Badge>
+          )}
+          {isStreaming && (
+            <Badge variant="outline" className="animate-pulse border-success/30 bg-success/10 font-mono text-[10px] text-success">
+              LIVE
+            </Badge>
+          )}
+        </div>
       </div>
 
       {groups.length > 0 && (
@@ -521,8 +531,16 @@ export function ChatInterface() {
   const activeTaskMsgIdRef = useRef<string | null>(null)
   const loadedForUserRef = useRef<string | null | undefined>(undefined)
   const savedToMemoryRef = useRef<Set<string>>(new Set())
+  const [memoryEnabled, setMemoryEnabled] = useState(false)
 
   const storageKey = getStorageKey(userId ?? null)
+
+  useEffect(() => {
+    fetch("/api/memory/status")
+      .then((r) => r.ok && r.json())
+      .then((data) => data?.enabled && setMemoryEnabled(true))
+      .catch(() => {})
+  }, [])
 
   useEffect(() => {
     if (!supabaseConfigured) { setUserId(null); return }
@@ -582,6 +600,7 @@ export function ChatInterface() {
       if (!summary && !m.query?.trim()) continue
       savedToMemoryRef.current.add(m.id)
       const content = [m.query, summary].filter(Boolean).join("\n\n")
+      const messageId = m.id
       fetch("/api/memory/add", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -590,7 +609,13 @@ export function ChatInterface() {
           metadata: { taskId: m.taskId, query: m.query },
           title: m.query?.slice(0, 100) || "Research",
         }),
-      }).catch(() => {})
+      })
+        .then((res) => {
+          if (res.ok) {
+            setMessages((prev) => prev.map((msg) => (msg.id === messageId ? { ...msg, memorySaved: true } : msg)))
+          }
+        })
+        .catch(() => {})
     }
   }, [messages, userId])
 
@@ -675,6 +700,12 @@ export function ChatInterface() {
         <CardTitle className="flex items-center gap-2 text-sm font-medium">
           <Brain className="h-3.5 w-3.5 text-primary" />
           Research Console
+          {memoryEnabled && (
+            <Badge variant="secondary" className="font-mono text-[9px] px-1.5 py-0 bg-primary/15 text-primary border-primary/30" title="Supermemory is active — results are saved and used for context">
+              <Database className="h-2.5 w-2.5 mr-1" />
+              Memory
+            </Badge>
+          )}
         </CardTitle>
         {teams.length > 0 && (
           <Select value={selectedTeamId ?? "all"} onValueChange={(v) => setSelectedTeamId(v === "all" ? null : v)}>
