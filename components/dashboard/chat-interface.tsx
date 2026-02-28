@@ -247,16 +247,26 @@ function ChatBubble({ message }: { message: ChatMessage }) {
 // ── Main component ────────────────────────────────────────────────────────
 
 export function ChatInterface() {
-  const [messages, setMessages] = useState<ChatMessage[]>(loadPersistedMessages)
+  const [messages, setMessages] = useState<ChatMessage[]>([])
   const [inputValue, setInputValue] = useState("")
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [teams, setTeams] = useState<Team[]>([])
   const [selectedTeamId, setSelectedTeamId] = useState<string | null>(null)
+  const [hydrated, setHydrated] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
   const abortRef = useRef<AbortController | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
   const activeTaskIdRef = useRef<string | null>(null)
   const activeTaskMsgIdRef = useRef<string | null>(null)
+
+  // Hydrate from localStorage on mount (client-only)
+  useEffect(() => {
+    const stored = loadPersistedMessages()
+    if (stored.length > 0) {
+      setMessages(stored)
+    }
+    setHydrated(true)
+  }, [])
 
   // Load teams on mount
   useEffect(() => {
@@ -268,9 +278,8 @@ export function ChatInterface() {
 
   // Load history from Supabase on mount
   useEffect(() => {
-    if (!supabaseConfigured) return
-    const stored = loadPersistedMessages()
-    if (stored.length > 0) return // already have local history
+    if (!supabaseConfigured || !hydrated) return
+    if (messages.length > 0) return // already have local history
 
     fetchTasks(20)
       .then(async (tasks) => {
@@ -316,10 +325,11 @@ export function ChatInterface() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Persist on change
+  // Persist on change (only after hydration to avoid overwriting stored data with empty array)
   useEffect(() => {
+    if (!hydrated) return
     persistMessages(messages)
-  }, [messages])
+  }, [messages, hydrated])
 
   // Auto-scroll
   useEffect(() => {
