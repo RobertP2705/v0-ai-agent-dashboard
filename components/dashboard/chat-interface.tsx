@@ -301,8 +301,8 @@ function CodeViewer({ code, language, stdout, stderr, exitCode }: {
 
 // ── Tool call card ────────────────────────────────────────────────────────
 
-function ToolCallCard({ event, resultEvent }: { event: LogEntry; resultEvent?: LogEntry }) {
-  const [expanded, setExpanded] = useState(false)
+function ToolCallCard({ event, resultEvent, autoExpand = false }: { event: LogEntry; resultEvent?: LogEntry; autoExpand?: boolean }) {
+  const [expanded, setExpanded] = useState(autoExpand)
   const tool = (event.meta?.tool as string) || ""
   const Icon = getToolIcon(tool)
   const isSandbox = tool === "modal_sandbox"
@@ -360,20 +360,38 @@ function ToolCallCard({ event, resultEvent }: { event: LogEntry; resultEvent?: L
 function AgentBubble({ group, isActive }: { group: AgentMessageGroup; isActive: boolean }) {
   const [showVerbose, setShowVerbose] = useState(false)
 
-  const lastResult = [...group.events].reverse().find((e) => e.type === "result" && !e.meta?.tool)
   const latestAction = [...group.events].reverse().find((e) => e.type === "action" || e.type === "thought")
 
-  const toolPairs: { action: LogEntry; result?: LogEntry }[] = useMemo(() => {
-    const pairs: { action: LogEntry; result?: LogEntry }[] = []
+  const displayItems = useMemo(() => {
+    const items: Array<
+      | { kind: "thought"; event: LogEntry }
+      | { kind: "tool"; action: LogEntry; result?: LogEntry }
+      | { kind: "final-result"; event: LogEntry }
+    > = []
+    const pairedResultIds = new Set<string>()
     for (let i = 0; i < group.events.length; i++) {
       const e = group.events[i]
       if (e.type === "action" && e.meta?.tool) {
-        const nextResult = group.events.slice(i + 1).find((r) => r.type === "result" && r.meta?.tool === e.meta?.tool)
-        pairs.push({ action: e, result: nextResult })
+        const result = group.events.slice(i + 1).find((r) => r.type === "result" && r.meta?.tool === e.meta?.tool)
+        if (result) pairedResultIds.add(result.id)
       }
     }
-    return pairs
+    for (const e of group.events) {
+      if (pairedResultIds.has(e.id)) continue
+      if (e.type === "thought") {
+        items.push({ kind: "thought", event: e })
+      } else if (e.type === "action" && e.meta?.tool) {
+        const idx = group.events.indexOf(e)
+        const result = group.events.slice(idx + 1).find((r) => r.type === "result" && r.meta?.tool === e.meta?.tool)
+        items.push({ kind: "tool", action: e, result })
+      } else if (e.type === "result" && !e.meta?.tool) {
+        items.push({ kind: "final-result", event: e })
+      }
+    }
+    return items
   }, [group.events])
+
+  const lastFinalResult = [...displayItems].reverse().find((i) => i.kind === "final-result")
 
   const statusLine = group.hasError
     ? "Error encountered"
@@ -411,24 +429,38 @@ function AgentBubble({ group, isActive }: { group: AgentMessageGroup; isActive: 
           {statusLine}
         </p>
 
-        {toolPairs.length > 0 && (
-          <div className="mt-1 space-y-0.5">
-            {toolPairs.map((pair, i) => (
-              <ToolCallCard key={i} event={pair.action} resultEvent={pair.result} />
-            ))}
+        {displayItems.length > 0 && (
+          <div className="mt-1.5 space-y-1">
+            {displayItems.map((item, i) => {
+              if (item.kind === "thought") {
+                return (
+                  <div key={item.event.id} className="flex items-start gap-2 rounded-md bg-chart-3/5 border border-chart-3/10 px-2 py-1.5">
+                    <Lightbulb className="h-3 w-3 mt-0.5 shrink-0 text-chart-3/70" />
+                    <p className="font-mono text-[11px] text-foreground/60 italic leading-relaxed">
+                      &ldquo;{item.event.message}&rdquo;
+                    </p>
+                  </div>
+                )
+              }
+              if (item.kind === "tool") {
+                return <ToolCallCard key={item.action.id} event={item.action} resultEvent={item.result} autoExpand={isActive} />
+              }
+              if (item.kind === "final-result" && item === lastFinalResult && group.isDone) {
+                return (
+                  <Collapsible key={item.event.id} defaultOpen={isActive} className="mt-1.5">
+                    <CollapsibleTrigger className="flex items-center gap-1 font-mono text-[10px] text-primary hover:text-primary/80 transition-colors">
+                      <ChevronDown className="h-3 w-3" />
+                      View response
+                    </CollapsibleTrigger>
+                    <CollapsibleContent className="mt-1 rounded-md border border-border bg-card/60 p-2 max-h-[300px] overflow-y-auto">
+                      <Md>{item.event.message}</Md>
+                    </CollapsibleContent>
+                  </Collapsible>
+                )
+              }
+              return null
+            })}
           </div>
-        )}
-
-        {lastResult && group.isDone && (
-          <Collapsible className="mt-1.5">
-            <CollapsibleTrigger className="flex items-center gap-1 font-mono text-[10px] text-primary hover:text-primary/80 transition-colors">
-              <ChevronDown className="h-3 w-3" />
-              View response
-            </CollapsibleTrigger>
-            <CollapsibleContent className="mt-1 rounded-md border border-border bg-card/60 p-2 max-h-[300px] overflow-y-auto">
-              <Md>{lastResult.message}</Md>
-            </CollapsibleContent>
-          </Collapsible>
         )}
 
         {group.events.length > 1 && (
@@ -537,9 +569,78 @@ function ChatBubble({ message }: { message: ChatMessage }) {
   )
 }
 
+// ── Event stream panel (fullscreen right sidebar) ────────────────────────
+
+function EventStreamPanel({ events }: { events: LogEntry[] }) {
+  const endRef = useRef<HTMLDivElement>(null)
+  useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }) }, [events.length])
+
+  return (
+    <div className="flex h-full flex-col">
+      <div className="flex items-center gap-2 border-b border-border px-3 py-2.5">
+        <Terminal className="h-3.5 w-3.5 text-primary" />
+        <span className="font-mono text-xs font-medium text-foreground">Event Stream</span>
+        <Badge variant="outline" className="ml-auto font-mono text-[9px] px-1.5 py-0">
+          {events.length}
+        </Badge>
+      </div>
+      <ScrollArea className="min-h-0 flex-1">
+        <div className="p-2 space-y-px">
+          {events.length === 0 && (
+            <p className="py-8 text-center font-mono text-[10px] text-muted-foreground">
+              Events will appear here during research...
+            </p>
+          )}
+          {events.map((ev) => {
+            const color =
+              ev.type === "thought" ? "text-chart-3"
+                : ev.type === "action" ? "text-chart-2"
+                : ev.type === "result" ? "text-success"
+                : ev.type === "error" ? "text-destructive"
+                : "text-muted-foreground"
+            return (
+              <div key={ev.id} className="flex items-start gap-1.5 rounded px-1.5 py-0.5 font-mono text-[10px] hover:bg-secondary/40 transition-colors">
+                <span className="shrink-0 text-muted-foreground/60 tabular-nums">{ev.timestamp}</span>
+                <span className={cn("shrink-0 font-medium", color)}>[{ev.agent}]</span>
+                <span className="text-foreground/60 break-all leading-relaxed">{ev.message.slice(0, 200)}</span>
+              </div>
+            )
+          })}
+          <div ref={endRef} />
+        </div>
+      </ScrollArea>
+    </div>
+  )
+}
+
+// ── Live stats pill ──────────────────────────────────────────────────────
+
+function LiveStats({ eventCount, agentCount, startTime }: { eventCount: number; agentCount: number; startTime: number }) {
+  const [elapsed, setElapsed] = useState(0)
+
+  useEffect(() => {
+    const interval = setInterval(() => setElapsed((Date.now() - startTime) / 1000), 100)
+    return () => clearInterval(interval)
+  }, [startTime])
+
+  return (
+    <div className="flex items-center gap-2 rounded-full border border-primary/20 bg-primary/5 px-3 py-1 font-mono text-[11px] text-primary">
+      <span className="relative flex h-2 w-2">
+        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-75" />
+        <span className="relative inline-flex h-2 w-2 rounded-full bg-primary" />
+      </span>
+      <span>{eventCount} events</span>
+      <span className="text-primary/40">·</span>
+      <span>{agentCount} agent{agentCount !== 1 ? "s" : ""}</span>
+      <span className="text-primary/40">·</span>
+      <span className="tabular-nums">{elapsed.toFixed(1)}s</span>
+    </div>
+  )
+}
+
 // ── Main component ────────────────────────────────────────────────────────
 
-export function ChatInterface() {
+export function ChatInterface({ fullscreen = false }: { fullscreen?: boolean }) {
   const [userId, setUserId] = useState<string | null | undefined>(undefined)
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [inputValue, setInputValue] = useState("")
@@ -554,6 +655,7 @@ export function ChatInterface() {
   const loadedForUserRef = useRef<string | null | undefined>(undefined)
   const savedToMemoryRef = useRef<Set<string>>(new Set())
   const [memoryEnabled, setMemoryEnabled] = useState(false)
+  const [streamStartTime, setStreamStartTime] = useState<number | null>(null)
 
   const storageKey = getStorageKey(userId ?? null)
 
@@ -653,6 +755,7 @@ export function ChatInterface() {
     setMessages((prev) => [...prev, userMsg, taskMsg])
     setInputValue("")
     setIsSubmitting(true)
+    setStreamStartTime(Date.now())
     abortRef.current?.abort()
     activeTaskIdRef.current = null
     activeTaskMsgIdRef.current = taskMsg.id
@@ -674,7 +777,7 @@ export function ChatInterface() {
         })
       },
       () => {
-        activeTaskIdRef.current = null; activeTaskMsgIdRef.current = null
+        activeTaskIdRef.current = null; activeTaskMsgIdRef.current = null; setStreamStartTime(null)
         setMessages((prev) => {
           const updated = [...prev]; const idx = updated.findIndex((m) => m.id === taskMsg.id)
           if (idx === -1) return prev
@@ -691,7 +794,7 @@ export function ChatInterface() {
         setIsSubmitting(false)
       },
       (err) => {
-        activeTaskIdRef.current = null; activeTaskMsgIdRef.current = null
+        activeTaskIdRef.current = null; activeTaskMsgIdRef.current = null; setStreamStartTime(null)
         setMessages((prev) => {
           const updated = [...prev]; const idx = updated.findIndex((m) => m.id === taskMsg.id)
           if (idx === -1) return prev
@@ -713,7 +816,101 @@ export function ChatInterface() {
         updated[idx] = { ...updated[idx], status: "error", summary: "Cancelled by user" }; return updated
       })
     }
-    activeTaskIdRef.current = null; activeTaskMsgIdRef.current = null; setIsSubmitting(false)
+    activeTaskIdRef.current = null; activeTaskMsgIdRef.current = null; setIsSubmitting(false); setStreamStartTime(null)
+  }
+
+  // Derive data for fullscreen top bar
+  const latestTask = [...messages].reverse().find((m) => m.type === "task")
+  const activeSteps = latestTask ? pipelineSteps(latestTask.status, latestTask.events) : null
+  const latestTaskGroups = latestTask ? buildAgentGroups(latestTask.events) : []
+  const currentStreamEvents = latestTask?.events ?? []
+
+  const teamSelector = teams.length > 0 && (
+    <Select value={selectedTeamId ?? "all"} onValueChange={(v) => setSelectedTeamId(v === "all" ? null : v)}>
+      <SelectTrigger className="h-8 min-w-0 flex-1 font-mono text-[11px] sm:w-[180px] sm:flex-initial" size="sm"><SelectValue placeholder="Team" /></SelectTrigger>
+      <SelectContent>
+        <SelectItem value="all" className="font-mono text-xs">All agents (default)</SelectItem>
+        {teams.map((t) => (<SelectItem key={t.id} value={t.id} className="font-mono text-xs">{t.name}</SelectItem>))}
+      </SelectContent>
+    </Select>
+  )
+
+  const inputBar = (
+    <form onSubmit={handleSubmit} className="flex items-center gap-2 border-t border-border p-3">
+      <input
+        type="text" value={inputValue} onChange={(e) => setInputValue(e.target.value)}
+        placeholder="Send a research query to the swarm..."
+        className="flex-1 rounded-md border border-border bg-secondary px-3 py-2 font-mono text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+      />
+      {isSubmitting ? (
+        <button type="button" onClick={handleCancel} className="flex h-8 w-8 items-center justify-center rounded-md bg-destructive text-destructive-foreground transition-colors hover:bg-destructive/80" title="Stop task">
+          <Square className="h-3.5 w-3.5" />
+        </button>
+      ) : (
+        <button type="submit" className="flex h-8 w-8 items-center justify-center rounded-md bg-primary text-primary-foreground transition-colors hover:bg-primary/80 disabled:opacity-50">
+          <Send className="h-3.5 w-3.5" />
+        </button>
+      )}
+    </form>
+  )
+
+  const messageList = (
+    <ScrollArea className="min-h-0 flex-1 overflow-hidden p-3" ref={scrollRef}>
+      <div className="space-y-3">
+        {messages.length === 0 && (
+          <p className="py-12 text-center font-mono text-xs text-muted-foreground">Send a research query to get started.</p>
+        )}
+        {messages.map((msg) => (<ChatBubble key={msg.id} message={msg} />))}
+        <div ref={bottomRef} />
+      </div>
+    </ScrollArea>
+  )
+
+  if (fullscreen) {
+    return (
+      <div className="flex h-full flex-col rounded-lg border border-border bg-card/80 backdrop-blur-sm">
+        {/* ── Top bar ─────────────────────────────────── */}
+        <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3">
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2">
+              <Brain className="h-4 w-4 text-primary" />
+              <span className="text-sm font-medium text-foreground">Research Console</span>
+            </div>
+            {activeSteps && <StatusStepper steps={activeSteps} size="lg" />}
+          </div>
+          <div className="flex items-center gap-3">
+            {isSubmitting && streamStartTime && (
+              <LiveStats
+                eventCount={currentStreamEvents.length}
+                agentCount={latestTaskGroups.length}
+                startTime={streamStartTime}
+              />
+            )}
+            {memoryEnabled && (
+              <Badge variant="secondary" className="font-mono text-[9px] px-1.5 py-0 bg-primary/15 text-primary border-primary/30" title="Supermemory is active">
+                <Database className="h-2.5 w-2.5 mr-1" />
+                Memory
+              </Badge>
+            )}
+            {teamSelector}
+          </div>
+        </div>
+
+        {/* ── Main content: two columns ───────────────── */}
+        <div className="flex min-h-0 flex-1">
+          {/* Left: chat messages */}
+          <div className="flex min-w-0 flex-1 flex-col">
+            {messageList}
+            {inputBar}
+          </div>
+
+          {/* Right: event stream */}
+          <div className="hidden w-80 shrink-0 border-l border-border bg-card/40 lg:flex lg:flex-col">
+            <EventStreamPanel events={currentStreamEvents} />
+          </div>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -729,42 +926,11 @@ export function ChatInterface() {
             </Badge>
           )}
         </CardTitle>
-        {teams.length > 0 && (
-          <Select value={selectedTeamId ?? "all"} onValueChange={(v) => setSelectedTeamId(v === "all" ? null : v)}>
-            <SelectTrigger className="h-8 min-w-0 flex-1 font-mono text-[11px] sm:w-[180px] sm:flex-initial" size="sm"><SelectValue placeholder="Team" /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all" className="font-mono text-xs">All agents (default)</SelectItem>
-              {teams.map((t) => (<SelectItem key={t.id} value={t.id} className="font-mono text-xs">{t.name}</SelectItem>))}
-            </SelectContent>
-          </Select>
-        )}
+        {teamSelector}
       </CardHeader>
       <CardContent className="flex min-h-0 flex-1 flex-col overflow-hidden p-0">
-        <ScrollArea className="min-h-0 flex-1 overflow-hidden p-3" ref={scrollRef}>
-          <div className="space-y-3">
-            {messages.length === 0 && (
-              <p className="py-12 text-center font-mono text-xs text-muted-foreground">Send a research query to get started.</p>
-            )}
-            {messages.map((msg) => (<ChatBubble key={msg.id} message={msg} />))}
-            <div ref={bottomRef} />
-          </div>
-        </ScrollArea>
-        <form onSubmit={handleSubmit} className="flex items-center gap-2 border-t border-border p-3">
-          <input
-            type="text" value={inputValue} onChange={(e) => setInputValue(e.target.value)}
-            placeholder="Send a research query to the swarm..."
-            className="flex-1 rounded-md border border-border bg-secondary px-3 py-2 font-mono text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-          />
-          {isSubmitting ? (
-            <button type="button" onClick={handleCancel} className="flex h-8 w-8 items-center justify-center rounded-md bg-destructive text-destructive-foreground transition-colors hover:bg-destructive/80" title="Stop task">
-              <Square className="h-3.5 w-3.5" />
-            </button>
-          ) : (
-            <button type="submit" className="flex h-8 w-8 items-center justify-center rounded-md bg-primary text-primary-foreground transition-colors hover:bg-primary/80 disabled:opacity-50">
-              <Send className="h-3.5 w-3.5" />
-            </button>
-          )}
-        </form>
+        {messageList}
+        {inputBar}
       </CardContent>
     </Card>
   )
