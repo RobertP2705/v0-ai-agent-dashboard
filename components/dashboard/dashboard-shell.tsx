@@ -8,24 +8,60 @@ import { ApiMonitor } from "@/components/dashboard/api-monitor"
 import { ChatInterface } from "@/components/dashboard/chat-interface"
 import { MeetingRoom } from "@/components/dashboard/meeting-room"
 import { ApiCreditsView } from "@/components/dashboard/api-credits-view"
-import { generateAgents } from "@/lib/simulation-data"
 import type { AgentInfo } from "@/lib/simulation-data"
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json())
 
-const fallbackAgents = generateAgents()
+function getStaticFallbackAgents(): AgentInfo[] {
+  return [
+    {
+      id: "paper-finder",
+      name: "Paper Finder",
+      status: "busy",
+      task: "Searching arXiv for transformer attention papers",
+      cpuHistory: Array(20).fill(50),
+      memoryHistory: Array(20).fill(45),
+      cpuCurrent: 67,
+      memoryCurrent: 54,
+    },
+    {
+      id: "coder",
+      name: "Coder",
+      status: "idle",
+      task: "Awaiting implementation task from Paper Finder",
+      cpuHistory: Array(20).fill(12),
+      memoryHistory: Array(20).fill(28),
+      cpuCurrent: 12,
+      memoryCurrent: 28,
+    },
+    {
+      id: "tester",
+      name: "Tester",
+      status: "error",
+      task: "Retry: benchmark suite failed on CUDA OOM",
+      cpuHistory: Array(20).fill(15),
+      memoryHistory: Array(20).fill(75),
+      cpuCurrent: 8,
+      memoryCurrent: 91,
+    },
+  ]
+}
 
 function mapDbAgents(dbAgents: Array<Record<string, unknown>>): AgentInfo[] {
-  return dbAgents.map((a) => ({
-    id: a.id as string,
-    name: a.name as string,
-    status: a.status as AgentInfo["status"],
-    task: a.task as string,
-    cpuCurrent: a.cpu_current as number,
-    memoryCurrent: a.memory_current as number,
-    cpuHistory: Array.from({ length: 20 }, () => Math.max(0, (a.cpu_current as number) + (Math.random() - 0.5) * 20)),
-    memoryHistory: Array.from({ length: 20 }, () => Math.max(0, (a.memory_current as number) + (Math.random() - 0.5) * 15)),
-  }))
+  return dbAgents.map((a) => {
+    const cpu = a.cpu_current as number
+    const mem = a.memory_current as number
+    return {
+      id: a.id as string,
+      name: a.name as string,
+      status: a.status as AgentInfo["status"],
+      task: a.task as string,
+      cpuCurrent: cpu,
+      memoryCurrent: mem,
+      cpuHistory: Array(20).fill(cpu),
+      memoryHistory: Array(20).fill(mem),
+    }
+  })
 }
 
 export function DashboardShell() {
@@ -38,7 +74,7 @@ export function DashboardShell() {
 
   const agents = dbAgents && Array.isArray(dbAgents) && dbAgents.length > 0
     ? mapDbAgents(dbAgents)
-    : fallbackAgents
+    : getStaticFallbackAgents()
 
   return (
     <div className="flex h-screen overflow-hidden">
