@@ -1,4 +1,6 @@
-MODEL_ID = "Qwen/Qwen3-32B"
+# Local vLLM model (best open-weight for tool use on single A100-80GB)
+# Qwen2.5-32B-Instruct: 128K context, strong tool/function calling, fits in bf16
+MODEL_ID = "Qwen/Qwen2.5-32B-Instruct"
 MODEL_REVISION = "main"
 GPU_CONFIG = "a100-80gb"
 GPU_COUNT = 1
