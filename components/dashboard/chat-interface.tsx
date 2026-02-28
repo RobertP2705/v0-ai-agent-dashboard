@@ -520,6 +520,7 @@ export function ChatInterface() {
   const activeTaskIdRef = useRef<string | null>(null)
   const activeTaskMsgIdRef = useRef<string | null>(null)
   const loadedForUserRef = useRef<string | null | undefined>(undefined)
+  const savedToMemoryRef = useRef<Set<string>>(new Set())
 
   const storageKey = getStorageKey(userId ?? null)
 
@@ -571,6 +572,28 @@ export function ChatInterface() {
     if (userId === undefined) return
     persistMessages(messages, storageKey)
   }, [messages, storageKey, userId])
+
+  // Save completed research tasks to Supermemory (per-user memory)
+  useEffect(() => {
+    if (userId === undefined || !userId) return
+    for (const m of messages) {
+      if (m.type !== "task" || m.status !== "completed" || savedToMemoryRef.current.has(m.id)) continue
+      const summary = m.summary?.trim() || ""
+      if (!summary && !m.query?.trim()) continue
+      savedToMemoryRef.current.add(m.id)
+      const content = [m.query, summary].filter(Boolean).join("\n\n")
+      fetch("/api/memory/add", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          content,
+          metadata: { taskId: m.taskId, query: m.query },
+          title: m.query?.slice(0, 100) || "Research",
+        }),
+      }).catch(() => {})
+    }
+  }, [messages, userId])
+
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }) }, [messages])
 
   const handleSubmit = (e: React.FormEvent) => {
