@@ -42,6 +42,7 @@ import {
   type TaskEventRow,
   type Team,
 } from "@/lib/supabase"
+import { createClient as createSupabaseClient } from "@/lib/supabase/client"
 import {
   Select,
   SelectContent,
@@ -166,19 +167,21 @@ function getToolIcon(tool?: string) {
   return Cog
 }
 
-// ── Storage ───────────────────────────────────────────────────────────────
+// ── Storage (user-specific) ─────────────────────────────────────────────────
 
-const STORAGE_KEY = "magi-chat-messages"
+function getStorageKey(userId: string | null) {
+  return `magi-chat-messages-${userId ?? "anonymous"}`
+}
 
-function loadPersistedMessages(): ChatMessage[] {
+function loadPersistedMessages(storageKey: string): ChatMessage[] {
   if (typeof window === "undefined") return []
   try {
-    const raw = localStorage.getItem(STORAGE_KEY)
+    const raw = localStorage.getItem(storageKey)
     return raw ? JSON.parse(raw) : []
   } catch { return [] }
 }
 
-function persistMessages(msgs: ChatMessage[]) {
+function persistMessages(msgs: ChatMessage[], storageKey: string) {
   try {
     const toStore = msgs.slice(-100).map((m) => ({
       ...m,
@@ -189,7 +192,7 @@ function persistMessages(msgs: ChatMessage[]) {
         return e
       }),
     }))
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(toStore))
+    localStorage.setItem(storageKey, JSON.stringify(toStore))
   } catch { /* storage full */ }
 }
 
@@ -505,7 +508,8 @@ function ChatBubble({ message }: { message: ChatMessage }) {
 // ── Main component ────────────────────────────────────────────────────────
 
 export function ChatInterface() {
-  const [messages, setMessages] = useState<ChatMessage[]>(loadPersistedMessages)
+  const [userId, setUserId] = useState<string | null | undefined>(undefined)
+  const [messages, setMessages] = useState<ChatMessage[]>([])
   const [inputValue, setInputValue] = useState("")
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [teams, setTeams] = useState<Team[]>([])
@@ -515,6 +519,16 @@ export function ChatInterface() {
   const bottomRef = useRef<HTMLDivElement>(null)
   const activeTaskIdRef = useRef<string | null>(null)
   const activeTaskMsgIdRef = useRef<string | null>(null)
+  const loadedForUserRef = useRef<string | null | undefined>(undefined)
+
+  const storageKey = getStorageKey(userId ?? null)
+
+  useEffect(() => {
+    if (!supabaseConfigured) { setUserId(null); return }
+    createSupabaseClient().auth.getUser().then(({ data: { user } }) => {
+      setUserId(user?.id ?? null)
+    })
+  }, [])
 
   useEffect(() => {
     if (!supabaseConfigured) return
@@ -522,9 +536,18 @@ export function ChatInterface() {
   }, [])
 
   useEffect(() => {
+    if (userId === undefined) return
+    if (loadedForUserRef.current === userId) return
+    loadedForUserRef.current = userId
+
+    const key = getStorageKey(userId)
+    const stored = loadPersistedMessages(key)
+    if (stored.length > 0) {
+      setMessages(stored)
+      return
+    }
+
     if (!supabaseConfigured) return
-    const stored = loadPersistedMessages()
-    if (stored.length > 0) return
 
     fetchTasks(20)
       .then(async (tasks) => {
@@ -539,13 +562,15 @@ export function ChatInterface() {
             summary: t.merged_answer || extractSummary(events), events, timestamp: formatTime(t.created_at),
           })
         }
-        if (restored.length > 0) { setMessages(restored); persistMessages(restored) }
+        if (restored.length > 0) { setMessages(restored); persistMessages(restored, key) }
       })
       .catch(() => {})
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [userId])
 
-  useEffect(() => { persistMessages(messages) }, [messages])
+  useEffect(() => {
+    if (userId === undefined) return
+    persistMessages(messages, storageKey)
+  }, [messages, storageKey, userId])
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }) }, [messages])
 
   const handleSubmit = (e: React.FormEvent) => {
