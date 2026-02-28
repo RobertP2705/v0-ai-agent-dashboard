@@ -302,6 +302,7 @@ function CodeViewer({ code, language, stdout, stderr, exitCode }: {
 // ── Tool call card ────────────────────────────────────────────────────────
 
 <<<<<<< HEAD
+<<<<<<< HEAD
 function ToolCallCard({ event, resultEvent }: { event: LogEntry; resultEvent?: LogEntry }) {
   const [expanded, setExpanded] = useState(false)
   const [outputOpen, setOutputOpen] = useState(true)
@@ -312,23 +313,32 @@ function ToolCallCard({ event, resultEvent, autoExpand = false }: { event: LogEn
   const tool = (event.meta?.tool as string) || ""
   const Icon = getToolIcon(tool)
   const isSandbox = tool === "modal_sandbox"
+=======
+function SandboxCard({ event, resultEvent }: { event: LogEntry; resultEvent?: LogEntry }) {
+  const [codeOpen, setCodeOpen] = useState(true)
+  const [stdoutOpen, setStdoutOpen] = useState(true)
+  const [copied, setCopied] = useState(false)
+>>>>>>> b1d96c3 (wand working)
   const code = event.meta?.code as string | undefined
   const exitCode = resultEvent?.meta?.exit_code as number | undefined
   const stdout = resultEvent?.meta?.stdout as string | undefined
   const stderr = resultEvent?.meta?.stderr as string | undefined
 
+  const handleCopy = () => {
+    if (!code) return
+    navigator.clipboard.writeText(code)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
   return (
-    <div className="my-1">
-      <button
-        onClick={() => setExpanded(!expanded)}
-        className={cn(
-          "flex w-full items-center gap-2 rounded-md border px-2 py-1.5 text-left font-mono text-[11px] transition-all hover:bg-secondary/50",
-          exitCode === 0 ? "border-success/20 bg-success/5"
-            : exitCode != null ? "border-destructive/20 bg-destructive/5"
-            : "border-border bg-card/40"
-        )}
-      >
-        <Icon className="h-3 w-3 shrink-0 text-chart-2" />
+    <div className={cn("my-1 rounded-md border overflow-hidden",
+      exitCode === 0 ? "border-success/20" : exitCode != null ? "border-destructive/20" : "border-border"
+    )}>
+      <div className={cn("flex items-center gap-2 px-2 py-1.5 font-mono text-[11px]",
+        exitCode === 0 ? "bg-success/5" : exitCode != null ? "bg-destructive/5" : "bg-card/40"
+      )}>
+        <Terminal className="h-3 w-3 shrink-0 text-chart-2" />
         <span className="flex-1 truncate text-foreground/80">{event.message}</span>
         {exitCode != null && (
           <Badge variant="outline" className={cn("text-[9px] px-1 py-0 shrink-0",
@@ -337,6 +347,78 @@ function ToolCallCard({ event, resultEvent, autoExpand = false }: { event: LogEn
             {exitCode === 0 ? "OK" : `exit ${exitCode}`}
           </Badge>
         )}
+      </div>
+
+      {code && (
+        <Collapsible open={codeOpen} onOpenChange={setCodeOpen}>
+          <CollapsibleTrigger className="w-full flex items-center gap-1.5 px-2 py-1 border-t border-border bg-secondary/30 hover:bg-secondary/50 transition-colors">
+            <Code2 className="h-2.5 w-2.5 text-chart-2" />
+            <span className="font-mono text-[9px] text-muted-foreground flex-1 text-left">Code</span>
+            <button
+              onClick={(e) => { e.stopPropagation(); handleCopy() }}
+              className="flex items-center gap-1 text-muted-foreground hover:text-foreground transition-colors"
+            >
+              {copied ? <Check className="h-2.5 w-2.5 text-success" /> : <Copy className="h-2.5 w-2.5" />}
+              <span className="font-mono text-[9px]">{copied ? "Copied" : "Copy"}</span>
+            </button>
+            <ChevronDown className={cn("h-2.5 w-2.5 text-muted-foreground transition-transform", !codeOpen && "-rotate-90")} />
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <pre className="max-h-[300px] overflow-auto p-2 font-mono text-[11px] text-foreground/80 leading-relaxed bg-card/60">
+              <code>{code}</code>
+            </pre>
+          </CollapsibleContent>
+        </Collapsible>
+      )}
+
+      {stdout && (
+        <Collapsible open={stdoutOpen} onOpenChange={setStdoutOpen}>
+          <CollapsibleTrigger className="w-full flex items-center gap-1.5 px-2 py-1 border-t border-border bg-secondary/20 hover:bg-secondary/40 transition-colors">
+            <Terminal className="h-2.5 w-2.5 text-success" />
+            <span className="font-mono text-[9px] text-success/80 flex-1 text-left">stdout</span>
+            <ChevronDown className={cn("h-2.5 w-2.5 text-muted-foreground transition-transform", !stdoutOpen && "-rotate-90")} />
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <pre className="max-h-[200px] overflow-auto p-2 font-mono text-[10px] text-foreground/70 leading-relaxed bg-secondary/10">
+              <code>{stdout}</code>
+            </pre>
+          </CollapsibleContent>
+        </Collapsible>
+      )}
+
+      {stderr && (
+        <div className="border-t border-destructive/20">
+          <div className="flex items-center gap-1.5 px-2 py-1 bg-destructive/10">
+            <AlertTriangle className="h-2.5 w-2.5 text-destructive" />
+            <span className="font-mono text-[9px] text-destructive/80">stderr</span>
+          </div>
+          <pre className="max-h-[150px] overflow-auto p-2 font-mono text-[10px] text-destructive/80 leading-relaxed bg-destructive/5">
+            <code>{stderr}</code>
+          </pre>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ToolCallCard({ event, resultEvent, autoExpand = false }: { event: LogEntry; resultEvent?: LogEntry; autoExpand?: boolean }) {
+  const [expanded, setExpanded] = useState(autoExpand)
+  const tool = (event.meta?.tool as string) || ""
+  const Icon = getToolIcon(tool)
+  const isSandbox = tool === "modal_sandbox"
+
+  if (isSandbox) {
+    return <SandboxCard event={event} resultEvent={resultEvent} />
+  }
+
+  return (
+    <div className="my-1">
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="flex w-full items-center gap-2 rounded-md border border-border bg-card/40 px-2 py-1.5 text-left font-mono text-[11px] transition-all hover:bg-secondary/50"
+      >
+        <Icon className="h-3 w-3 shrink-0 text-chart-2" />
+        <span className="flex-1 truncate text-foreground/80">{event.message}</span>
         <ChevronRight className={cn("h-3 w-3 shrink-0 text-muted-foreground transition-transform", expanded && "rotate-90")} />
       </button>
 
@@ -376,6 +458,7 @@ function ToolCallCard({ event, resultEvent, autoExpand = false }: { event: LogEn
 
       {expanded && (
         <div className="pl-2">
+<<<<<<< HEAD
           {isSandbox && code ? (
             <CodeViewer code={code} exitCode={exitCode ?? null} />
           ) : (
@@ -390,6 +473,18 @@ function ToolCallCard({ event, resultEvent, autoExpand = false }: { event: LogEn
               )}
             </div>
           )}
+=======
+          <div className="mt-1 rounded-md border border-border bg-card/60 p-2">
+            <pre className="max-h-[200px] overflow-auto font-mono text-[10px] text-foreground/70 whitespace-pre-wrap">
+              {JSON.stringify(event.meta?.args || event.meta, null, 2)}
+            </pre>
+            {resultEvent && (
+              <p className="mt-1 font-mono text-[10px] text-muted-foreground border-t border-border pt-1">
+                {resultEvent.message}
+              </p>
+            )}
+          </div>
+>>>>>>> b1d96c3 (wand working)
         </div>
       )}
     </div>

@@ -9,11 +9,18 @@ TOOL_SCHEMA = {
     "function": {
         "name": "modal_sandbox",
         "description": (
+<<<<<<< HEAD
             "Execute Python code in an isolated Modal sandbox container with GPU access. "
             "Use this to reproduce paper implementations, run experiments, "
             "and test code. The sandbox has access to W&B (WANDB_API_KEY) and "
             "GitHub (GITHUB_TOKEN) environment variables automatically. "
             "Returns stdout, stderr, and exit code."
+=======
+            "Execute Python code in an isolated Modal sandbox container with optional GPU. "
+            "Use this to reproduce paper implementations, run experiments, "
+            "and test code. The sandbox has WANDB_API_KEY and GITHUB_TOKEN "
+            "environment variables available. Returns stdout, stderr, and exit code."
+>>>>>>> b1d96c3 (wand working)
         ),
         "parameters": {
             "type": "object",
@@ -30,11 +37,19 @@ TOOL_SCHEMA = {
                 "setup_commands": {
                     "type": "array",
                     "items": {"type": "string"},
+<<<<<<< HEAD
                     "description": "Shell commands to run before executing the code (e.g. ['apt-get install -y libgl1'] for system deps).",
                 },
                 "gpu": {
                     "type": "string",
                     "description": "GPU type to use (e.g. 'T4', 'A10G', 'A100'). Omit for CPU-only.",
+=======
+                    "description": "Shell commands to run before the code (e.g. ['apt-get install -y libgl1']).",
+                },
+                "gpu": {
+                    "type": "string",
+                    "description": "GPU type (e.g. 'T4', 'A10G', 'A100'). Omit for CPU-only.",
+>>>>>>> b1d96c3 (wand working)
                 },
                 "timeout": {
                     "type": "integer",

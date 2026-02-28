@@ -167,6 +167,9 @@ class BaseAgent:
         for iteration in range(self.max_iterations):
             self._check_cancelled()
 
+            if iteration > 0:
+                yield self._emit("thought", "Analyzing results and planning next step...")
+
             response = self.model.generate.remote(
                 messages=messages,
                 tools=tool_schemas if tool_schemas else None,
