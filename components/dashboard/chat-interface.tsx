@@ -30,9 +30,18 @@ import {
   supabaseConfigured,
   fetchTasks,
   fetchTaskEvents,
+  fetchTeams,
   type TaskRow,
   type TaskEventRow,
+  type Team,
 } from "@/lib/supabase"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 
 // ── Types ─────────────────────────────────────────────────────────────────
 
@@ -210,11 +219,13 @@ function ChatBubble({ message }: { message: ChatMessage }) {
         )}
       </div>
 
-      <p className="font-mono text-xs text-foreground/90 leading-relaxed whitespace-pre-wrap">
-        {message.status === "streaming" && message.events.length === 0
-          ? "Waiting for response..."
-          : message.summary}
-      </p>
+      <div className="max-h-[12rem] overflow-y-auto">
+        <p className="font-mono text-xs text-foreground/90 leading-relaxed whitespace-pre-wrap">
+          {message.status === "streaming" && message.events.length === 0
+            ? "Waiting for response..."
+            : message.summary}
+        </p>
+      </div>
 
       {message.events.length > 0 && (
         <Collapsible open={open} onOpenChange={setOpen} className="mt-2">
@@ -239,11 +250,21 @@ export function ChatInterface() {
   const [messages, setMessages] = useState<ChatMessage[]>(loadPersistedMessages)
   const [inputValue, setInputValue] = useState("")
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [teams, setTeams] = useState<Team[]>([])
+  const [selectedTeamId, setSelectedTeamId] = useState<string | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const abortRef = useRef<AbortController | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
   const activeTaskIdRef = useRef<string | null>(null)
   const activeTaskMsgIdRef = useRef<string | null>(null)
+
+  // Load teams on mount
+  useEffect(() => {
+    if (!supabaseConfigured) return
+    fetchTeams()
+      .then(setTeams)
+      .catch(() => {})
+  }, [])
 
   // Load history from Supabase on mount
   useEffect(() => {
@@ -384,6 +405,7 @@ export function ChatInterface() {
         })
         setIsSubmitting(false)
       },
+      selectedTeamId ?? undefined,
     )
   }
 
@@ -416,14 +438,34 @@ export function ChatInterface() {
 
   return (
     <Card className="flex h-full flex-col border-border bg-card/80 backdrop-blur-sm">
-      <CardHeader className="border-b border-border pb-3">
+      <CardHeader className="flex flex-row items-center justify-between gap-3 border-b border-border pb-3">
         <CardTitle className="flex items-center gap-2 text-sm font-medium">
           <Brain className="h-3.5 w-3.5 text-primary" />
           Research Console
         </CardTitle>
+        {teams.length > 0 && (
+          <Select
+            value={selectedTeamId ?? "all"}
+            onValueChange={(v) => setSelectedTeamId(v === "all" ? null : v)}
+          >
+            <SelectTrigger className="h-8 w-[180px] font-mono text-[11px]" size="sm">
+              <SelectValue placeholder="Team" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all" className="font-mono text-xs">
+                All agents (default)
+              </SelectItem>
+              {teams.map((t) => (
+                <SelectItem key={t.id} value={t.id} className="font-mono text-xs">
+                  {t.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
       </CardHeader>
-      <CardContent className="flex min-h-0 flex-1 flex-col p-0">
-        <ScrollArea className="flex-1 p-3" ref={scrollRef}>
+      <CardContent className="flex min-h-0 flex-1 flex-col overflow-hidden p-0">
+        <ScrollArea className="min-h-0 flex-1 overflow-hidden p-3" ref={scrollRef}>
           <div className="space-y-3">
             {messages.length === 0 && (
               <p className="py-12 text-center font-mono text-xs text-muted-foreground">
