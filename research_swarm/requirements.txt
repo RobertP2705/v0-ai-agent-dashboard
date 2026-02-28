@@ -1,0 +1,12 @@
+modal>=0.73
+fastapi>=0.115
+uvicorn>=0.34
+vllm>=0.8
+openai>=1.60
+httpx>=0.28
+arxiv>=2.1
+pydantic>=2.10
+sse-starlette>=2.2
+supabase>=2.11
+wandb>=0.19
+PyGithub>=2.5

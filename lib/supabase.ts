@@ -1,0 +1,258 @@
+import { createClient, SupabaseClient } from "@supabase/supabase-js"
+
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? ""
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? ""
+
+export const supabaseConfigured = !!(supabaseUrl && supabaseAnonKey)
+
+export const supabase: SupabaseClient = supabaseConfigured
+  ? createClient(supabaseUrl, supabaseAnonKey)
+  : (new Proxy({} as SupabaseClient, {
+      get: () => () => {
+        throw new Error("Supabase is not configured. Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY in .env.local")
+      },
+    }))
+
+// ── Types matching the Supabase schema ──────────────────────────────────
+
+export interface Team {
+  id: string
+  name: string
+  description: string
+  created_at: string
+  team_agents?: TeamAgent[]
+}
+
+export interface TeamAgent {
+  id: string
+  team_id: string
+  agent_type: string
+  config: Record<string, unknown>
+  enabled: boolean
+}
+
+export interface Paper {
+  id: string
+  task_id: string | null
+  arxiv_id: string
+  title: string
+  authors: string[]
+  abstract: string
+  summary: string
+  pdf_url: string
+  created_at: string
+}
+
+export interface Experiment {
+  id: string
+  task_id: string | null
+  paper_id: string | null
+  code: string
+  wandb_run_url: string
+  github_repo: string
+  github_commit: string
+  status: string
+  metrics: Record<string, unknown>
+  created_at: string
+}
+
+export interface ResearchDirection {
+  id: string
+  task_id: string | null
+  title: string
+  rationale: string
+  feasibility_score: number
+  novelty_score: number
+  related_papers: string[]
+  created_at: string
+}
+
+// ── Team CRUD (direct Supabase from client) ─────────────────────────────
+
+export async function fetchTeams(): Promise<Team[]> {
+  const { data, error } = await supabase
+    .from("teams")
+    .select("*, team_agents(*)")
+    .order("created_at", { ascending: false })
+  if (error) throw error
+  return data ?? []
+}
+
+export async function createTeam(name: string, description = ""): Promise<Team> {
+  const { data, error } = await supabase
+    .from("teams")
+    .insert({ name, description })
+    .select()
+    .single()
+  if (error) throw error
+  return data
+}
+
+export async function updateTeam(id: string, updates: Partial<Pick<Team, "name" | "description">>): Promise<Team> {
+  const { data, error } = await supabase
+    .from("teams")
+    .update(updates)
+    .eq("id", id)
+    .select()
+    .single()
+  if (error) throw error
+  return data
+}
+
+export async function deleteTeam(id: string): Promise<void> {
+  const { error } = await supabase.from("teams").delete().eq("id", id)
+  if (error) throw error
+}
+
+export async function addAgentToTeam(teamId: string, agentType: string): Promise<TeamAgent> {
+  const { data, error } = await supabase
+    .from("team_agents")
+    .insert({ team_id: teamId, agent_type: agentType, config: {}, enabled: true })
+    .select()
+    .single()
+  if (error) throw error
+  return data
+}
+
+export async function removeAgentFromTeam(agentRowId: string): Promise<void> {
+  const { error } = await supabase.from("team_agents").delete().eq("id", agentRowId)
+  if (error) throw error
+}
+
+export async function toggleAgentInTeam(agentRowId: string, enabled: boolean): Promise<void> {
+  const { error } = await supabase
+    .from("team_agents")
+    .update({ enabled })
+    .eq("id", agentRowId)
+  if (error) throw error
+}
+
+// ── Real metrics queries ─────────────────────────────────────────────────
+
+export interface TaskRow {
+  id: string
+  query: string
+  status: string
+  assigned_agents: string[]
+  merged_answer: string
+  total_usage: { prompt_tokens: number; completion_tokens: number; total_tokens: number }
+  created_at: string
+  team_id: string | null
+}
+
+export interface TaskEventRow {
+  id: string
+  task_id: string
+  agent_type: string
+  event_type: string
+  message: string
+  meta: Record<string, unknown>
+  created_at: string
+}
+
+export async function fetchTasks(limit = 50): Promise<TaskRow[]> {
+  const { data, error } = await supabase
+    .from("tasks")
+    .select("*")
+    .order("created_at", { ascending: false })
+    .limit(limit)
+  if (error) throw error
+  return data ?? []
+}
+
+export async function fetchTaskEvents(taskId: string): Promise<TaskEventRow[]> {
+  const { data, error } = await supabase
+    .from("task_events")
+    .select("*")
+    .eq("task_id", taskId)
+    .order("created_at", { ascending: true })
+  if (error) throw error
+  return data ?? []
+}
+
+export async function fetchAllEvents(limit = 200): Promise<TaskEventRow[]> {
+  const { data, error } = await supabase
+    .from("task_events")
+    .select("*")
+    .order("created_at", { ascending: false })
+    .limit(limit)
+  if (error) throw error
+  return (data ?? []).reverse()
+}
+
+export async function fetchPapers(limit = 50): Promise<Paper[]> {
+  const { data, error } = await supabase
+    .from("papers")
+    .select("*")
+    .order("created_at", { ascending: false })
+    .limit(limit)
+  if (error) throw error
+  return data ?? []
+}
+
+export async function fetchExperiments(limit = 50): Promise<Experiment[]> {
+  const { data, error } = await supabase
+    .from("experiments")
+    .select("*")
+    .order("created_at", { ascending: false })
+    .limit(limit)
+  if (error) throw error
+  return data ?? []
+}
+
+export async function fetchDirections(limit = 50): Promise<ResearchDirection[]> {
+  const { data, error } = await supabase
+    .from("research_directions")
+    .select("*")
+    .order("created_at", { ascending: false })
+    .limit(limit)
+  if (error) throw error
+  return data ?? []
+}
+
+export interface DashboardStats {
+  totalTasks: number
+  completedTasks: number
+  totalTokens: number
+  promptTokens: number
+  completionTokens: number
+  totalPapers: number
+  totalExperiments: number
+  totalDirections: number
+}
+
+export async function fetchDashboardStats(): Promise<DashboardStats> {
+  const [tasks, papers, experiments, directions] = await Promise.all([
+    supabase.from("tasks").select("status, total_usage"),
+    supabase.from("papers").select("id", { count: "exact", head: true }),
+    supabase.from("experiments").select("id", { count: "exact", head: true }),
+    supabase.from("research_directions").select("id", { count: "exact", head: true }),
+  ])
+
+  let totalTokens = 0
+  let promptTokens = 0
+  let completionTokens = 0
+  let completedTasks = 0
+  const taskRows = tasks.data ?? []
+
+  for (const t of taskRows) {
+    const u = t.total_usage as { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number } | null
+    if (u) {
+      totalTokens += u.total_tokens ?? 0
+      promptTokens += u.prompt_tokens ?? 0
+      completionTokens += u.completion_tokens ?? 0
+    }
+    if (t.status === "completed") completedTasks++
+  }
+
+  return {
+    totalTasks: taskRows.length,
+    completedTasks,
+    totalTokens,
+    promptTokens,
+    completionTokens,
+    totalPapers: papers.count ?? 0,
+    totalExperiments: experiments.count ?? 0,
+    totalDirections: directions.count ?? 0,
+  }
+}
