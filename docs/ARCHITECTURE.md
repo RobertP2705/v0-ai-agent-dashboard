@@ -91,7 +91,7 @@
    - `_merge_results()` → synthesized report
    - `db.update_task()` with `merged_answer`, `total_usage`
 4. SSE events stream back: `{task_id, agent, type, message, timestamp}`
-5. `ChatInterface` consumes events, updates UI, persists to localStorage
+5. `ChatInterface` consumes events, updates UI, persists to Supabase `chat_history` table
 6. On completion, result optionally saved to Supermemory via `POST /api/memory/add`
 
 ## Authentication & Authorization

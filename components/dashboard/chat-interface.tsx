@@ -180,39 +180,7 @@ function getToolIcon(tool?: string) {
   return Cog
 }
 
-// ── Storage (user-specific) ─────────────────────────────────────────────────
-
-const ANONYMOUS_ID_KEY = "magi-chat-anonymous-id"
-
-/** Per-browser anonymous id so unauthenticated users don't all share the same chat history. */
-function getAnonymousStorageId(): string {
-  if (typeof window === "undefined") return "anonymous"
-  try {
-    let id = localStorage.getItem(ANONYMOUS_ID_KEY)
-    if (!id) {
-      id =
-        (typeof crypto !== "undefined" && crypto.randomUUID?.()) ||
-        `anon-${Date.now()}-${Math.random().toString(36).slice(2)}`
-      localStorage.setItem(ANONYMOUS_ID_KEY, id)
-    }
-    return id
-  } catch {
-    return "anonymous"
-  }
-}
-
-function getStorageKey(userId: string | null): string {
-  if (userId) return `magi-chat-messages-${userId}`
-  return `magi-chat-messages-anonymous-${getAnonymousStorageId()}`
-}
-
-function loadPersistedMessages(storageKey: string): ChatMessage[] {
-  if (typeof window === "undefined") return []
-  try {
-    const raw = localStorage.getItem(storageKey)
-    return raw ? JSON.parse(raw) : []
-  } catch { return [] }
-}
+// ── Storage helpers ──────────────────────────────────────────────────────────
 
 function prepareForStorage(msgs: ChatMessage[], limit: number): ChatMessage[] {
   return msgs.slice(-limit).map((m) => ({
@@ -224,12 +192,6 @@ function prepareForStorage(msgs: ChatMessage[], limit: number): ChatMessage[] {
       return e
     }),
   }))
-}
-
-function persistMessages(msgs: ChatMessage[], storageKey: string) {
-  try {
-    localStorage.setItem(storageKey, JSON.stringify(prepareForStorage(msgs, 100)))
-  } catch { /* storage full */ }
 }
 
 // ── Markdown code block with copy + syntax highlighting ──────────────────
@@ -885,10 +847,6 @@ export function ChatInterface({ fullscreen = false, projectId, teamId }: ChatInt
   const activeAgentsRef = useRef<Set<string>>(new Set())
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  const storageKey = projectId
-    ? `${getStorageKey(userId ?? null)}-project-${projectId}`
-    : getStorageKey(userId ?? null)
-
   useEffect(() => {
     fetch("/api/memory/status")
       .then((r) => r.ok && r.json())
@@ -955,22 +913,8 @@ export function ChatInterface({ fullscreen = false, projectId, teamId }: ChatInt
       return
     }
 
-    // Anonymous / no Supabase: fall back to localStorage
-    const key = getStorageKey(userId)
-    const stored = loadPersistedMessages(key)
-    if (stored.length > 0) {
-      for (const m of stored) {
-        if (m.memorySaved) savedToMemoryRef.current.add(m.id)
-      }
-      setMessages(stored)
-    }
+    // Anonymous / no Supabase: no persisted history available
   }, [userId])
-
-  // Persist to localStorage for anonymous users only
-  useEffect(() => {
-    if (userId === undefined || userId) return
-    persistMessages(messages, storageKey)
-  }, [messages, storageKey, userId])
 
   // Debounced save to Supabase for authenticated users
   useEffect(() => {
@@ -1160,7 +1104,6 @@ export function ChatInterface({ fullscreen = false, projectId, teamId }: ChatInt
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
       clearChatHistory(userId).catch(() => {})
     }
-    try { localStorage.removeItem(storageKey) } catch {}
   }
 
   // Keep StreamingContext.currentEvents in sync with the latest task's events
