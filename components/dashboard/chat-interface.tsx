@@ -883,11 +883,29 @@ export function ChatInterface({ fullscreen = false }: { fullscreen?: boolean }) 
     persistMessages(messages, storageKey)
   }, [messages, storageKey, userId])
 
-  // Save completed research tasks to Supermemory (per-user memory)
+  // Save user messages and completed research tasks to Supermemory
   useEffect(() => {
     if (userId === undefined || !userId) return
     for (const m of messages) {
-      if (m.type !== "task" || m.status !== "completed" || m.memorySaved || savedToMemoryRef.current.has(m.id)) continue
+      if (savedToMemoryRef.current.has(m.id)) continue
+
+      if (m.type === "user") {
+        const query = m.query?.trim()
+        if (!query) continue
+        savedToMemoryRef.current.add(m.id)
+        fetch("/api/memory/add", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            content: `User query: ${query}`,
+            metadata: { type: "user_message" },
+            title: query.slice(0, 100),
+          }),
+        }).catch(() => {})
+        continue
+      }
+
+      if (m.type !== "task" || m.status !== "completed") continue
       const summary = m.summary?.trim() || ""
       if (!summary && !m.query?.trim()) continue
       savedToMemoryRef.current.add(m.id)

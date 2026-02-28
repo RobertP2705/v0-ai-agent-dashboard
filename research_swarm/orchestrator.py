@@ -26,12 +26,25 @@ def run_research(
     query: str,
     model_remote: Any,
     team_id: str | None = None,
+    memory_context: list[dict] | None = None,
 ) -> Generator[dict, None, dict]:
     """Full orchestration pipeline: triage -> parallel fan-out -> merge.
 
     Yields event dicts as they happen for SSE streaming.
     All state is persisted to Supabase.
     """
+    if memory_context:
+        context_block = "\n\n".join(
+            m["content"] for m in memory_context if isinstance(m.get("content"), str)
+        )
+        augmented_query = (
+            f"## Relevant context from previous conversations:\n"
+            f"{context_block}\n\n"
+            f"## Current request:\n{query}"
+        )
+    else:
+        augmented_query = query
+
     try:
         task_row = db.create_task(query=query, team_id=team_id)
     except Exception as exc:
@@ -50,13 +63,13 @@ def run_research(
     yield _event(task_id, "system", "action", f"Routing query to model ({counts_str})...")
 
     try:
-        routing = _triage(query, model_remote, agent_counts)
+        routing = _triage(augmented_query, model_remote, agent_counts)
     except Exception as exc:
         yield _event(task_id, "system", "error", f"Triage failed: {exc}")
         db.update_task(task_id, {"status": "error"})
         return db.get_task(task_id) or {}
 
-    roster = _build_roster(routing, agent_counts, query)
+    roster = _build_roster(routing, agent_counts, augmented_query)
 
     all_agent_ids = list({agent_id for agent_id, _, _ in roster})
     db.update_task(task_id, {
