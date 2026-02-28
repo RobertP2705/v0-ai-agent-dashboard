@@ -147,7 +147,7 @@ function OverviewView({ userName }: { userName: string }) {
       </div>
       <AgentStatusGrid />
       <ApiMonitor />
-      <div className="min-h-[400px]">
+      <div className="h-[500px] shrink-0">
         <ChatInterface />
       </div>
     </div>

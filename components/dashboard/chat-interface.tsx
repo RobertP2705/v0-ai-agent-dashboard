@@ -33,6 +33,9 @@ import {
   User,
   Copy,
   Check,
+  Trash2,
+  BookOpen,
+  Compass,
 } from "lucide-react"
 import { SupermemoryIcon } from "@/components/ui/supermemory-icon"
 import { StatusStepper } from "./status-stepper"
@@ -807,6 +810,44 @@ function LiveStats({ eventCount, agentCount, startTime }: { eventCount: number; 
   )
 }
 
+// ── Compact agent status indicator for fullscreen research tab ────────────
+
+const agentDefs: { id: string; label: string; icon: React.ElementType }[] = [
+  { id: "paper-collector", label: "Paper Collector", icon: BookOpen },
+  { id: "implementer", label: "Implementer", icon: Terminal },
+  { id: "research-director", label: "Research Director", icon: Compass },
+]
+
+function AgentStatusBar() {
+  const { isStreaming, activeAgents } = useStreaming()
+  return (
+    <div className="flex items-center gap-1.5">
+      {agentDefs.map(({ id, label, icon: Icon }) => {
+        const busy = isStreaming && activeAgents.includes(id)
+        return (
+          <div
+            key={id}
+            className={cn(
+              "flex items-center gap-1 rounded-full px-2 py-0.5 font-mono text-[9px] transition-colors",
+              busy
+                ? "bg-success/15 text-success border border-success/30"
+                : "bg-secondary/50 text-muted-foreground border border-transparent"
+            )}
+            title={`${label}: ${busy ? "busy" : "idle"}`}
+          >
+            {busy ? (
+              <Loader2 className="h-2.5 w-2.5 animate-spin" />
+            ) : (
+              <Icon className="h-2.5 w-2.5" />
+            )}
+            <span className="hidden sm:inline">{label.split(" ")[0]}</span>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 // ── Main component ────────────────────────────────────────────────────────
 
 let nextMsgId = 0
@@ -937,7 +978,20 @@ export function ChatInterface({ fullscreen = false }: { fullscreen?: boolean }) 
     }
   }, [messages, userId])
 
-  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }) }, [messages])
+  const userScrolledUpRef = useRef(false)
+
+  useEffect(() => {
+    if (!userScrolledUpRef.current) {
+      bottomRef.current?.scrollIntoView({ behavior: "smooth" })
+    }
+  }, [messages])
+
+  const handleScroll = useCallback(() => {
+    const viewport = scrollRef.current?.querySelector("[data-radix-scroll-area-viewport]") as HTMLElement | null
+    if (!viewport) return
+    const distFromBottom = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight
+    userScrolledUpRef.current = distFromBottom > 150
+  }, [])
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -1043,6 +1097,13 @@ export function ChatInterface({ fullscreen = false }: { fullscreen?: boolean }) 
     setStreamingState({ isStreaming: false, activeAgents: [] })
   }
 
+  const handleClearHistory = () => {
+    if (isSubmitting) return
+    setMessages([])
+    savedToMemoryRef.current = new Set()
+    try { localStorage.removeItem(storageKey) } catch {}
+  }
+
   // Derive data for fullscreen top bar
   const latestTask = [...messages].reverse().find((m) => m.type === "task")
   const activeSteps = latestTask ? pipelineSteps(latestTask.status, latestTask.events) : null
@@ -1061,26 +1122,44 @@ export function ChatInterface({ fullscreen = false }: { fullscreen?: boolean }) 
 
   const inputBar = (
     <form onSubmit={handleSubmit} className="flex items-center gap-2 border-t border-border p-3">
+      {messages.length > 0 && !isSubmitting && (
+        <button
+          type="button"
+          onClick={handleClearHistory}
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border bg-secondary text-muted-foreground transition-colors hover:bg-destructive/20 hover:text-destructive"
+          title="Clear chat history"
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+        </button>
+      )}
       <input
         type="text" value={inputValue} onChange={(e) => setInputValue(e.target.value)}
         placeholder="Send a research query to the swarm..."
         className="flex-1 rounded-md border border-border bg-secondary px-3 py-2 font-mono text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
       />
       {isSubmitting ? (
-        <button type="button" onClick={handleCancel} className="flex h-8 w-8 items-center justify-center rounded-md bg-destructive text-destructive-foreground transition-colors hover:bg-destructive/80" title="Stop task">
+        <button type="button" onClick={handleCancel} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-destructive text-destructive-foreground transition-colors hover:bg-destructive/80" title="Stop task">
           <Square className="h-3.5 w-3.5" />
         </button>
       ) : (
-        <button type="submit" className="flex h-8 w-8 items-center justify-center rounded-md bg-primary text-primary-foreground transition-colors hover:bg-primary/80 disabled:opacity-50">
+        <button type="submit" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground transition-colors hover:bg-primary/80 disabled:opacity-50">
           <Send className="h-3.5 w-3.5" />
         </button>
       )}
     </form>
   )
 
+  // Attach scroll listener to the Radix viewport
+  useEffect(() => {
+    const viewport = scrollRef.current?.querySelector("[data-radix-scroll-area-viewport]") as HTMLElement | null
+    if (!viewport) return
+    viewport.addEventListener("scroll", handleScroll, { passive: true })
+    return () => viewport.removeEventListener("scroll", handleScroll)
+  }, [handleScroll])
+
   const messageList = (
-    <ScrollArea className="min-h-0 flex-1 overflow-hidden p-3" ref={scrollRef}>
-      <div className="space-y-3">
+    <ScrollArea className="min-h-0 flex-1 overflow-hidden" ref={scrollRef}>
+      <div className="space-y-3 p-3">
         {messages.length === 0 && (
           <p className="py-12 text-center font-mono text-xs text-muted-foreground">Send a research query to get started.</p>
         )}
@@ -1094,7 +1173,7 @@ export function ChatInterface({ fullscreen = false }: { fullscreen?: boolean }) 
     return (
       <div className="flex h-full flex-col rounded-lg border border-border bg-card/80 backdrop-blur-sm">
         {/* ── Top bar ─────────────────────────────────── */}
-        <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3">
+        <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-2">
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-2">
               <Brain className="h-4 w-4 text-primary" />
@@ -1110,6 +1189,7 @@ export function ChatInterface({ fullscreen = false }: { fullscreen?: boolean }) 
                 startTime={streamStartTime}
               />
             )}
+            <AgentStatusBar />
             {memoryEnabled && (
               <Badge variant="secondary" className="font-mono text-[9px] px-1.5 py-0 bg-primary/15 text-primary border-primary/30" title="Supermemory is active">
                 <SupermemoryIcon className="h-2.5 w-2.5 mr-1" spinning={isSubmitting} />
