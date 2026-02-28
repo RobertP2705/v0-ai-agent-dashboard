@@ -4,6 +4,11 @@ import { useEffect, useState, useCallback } from "react"
 import { createClient } from "@/lib/supabase/client"
 import { Menu } from "lucide-react"
 import { SidebarNav } from "@/components/dashboard/sidebar-nav"
+import { ChatInterface } from "@/components/dashboard/chat-interface"
+import { AgentStatusGrid } from "@/components/dashboard/agent-status-grid"
+import { KnowledgeGraphView } from "@/components/dashboard/knowledge-graph"
+import { PapersView } from "@/components/dashboard/papers-view"
+import { MeetingRoom } from "@/components/dashboard/meeting-room"
 import { ApiCreditsView } from "@/components/dashboard/api-credits-view"
 import { TeamsView } from "@/components/dashboard/teams-view"
 import { ProjectsLanding } from "@/components/dashboard/projects-landing"
@@ -40,6 +45,22 @@ const viewMeta: Record<string, { title: string; description: string }> = {
   },
   "project-meeting": {
     title: "Research Meeting Room",
+    description: "Multi-agent discussion with voice synthesis",
+  },
+  research: {
+    title: "Research Console",
+    description: "Full-screen research console with live agent monitoring",
+  },
+  "knowledge-graph": {
+    title: "Knowledge Graph",
+    description: "Visualize memories, papers, and connections",
+  },
+  papers: {
+    title: "Papers Library",
+    description: "Browse and search collected research papers",
+  },
+  meeting: {
+    title: "Meeting Room",
     description: "Multi-agent discussion with voice synthesis",
   },
   teams: {
@@ -184,6 +205,17 @@ export function DashboardShell() {
                 />
               </div>
             )}
+
+            {/* Workspace views (global, unscoped) */}
+            {activeView === "research" && (
+              <div className="flex h-full flex-col gap-4 lg:flex-row">
+                <div className="flex-1"><ChatInterface fullscreen /></div>
+                <div className="w-full lg:w-[340px]"><AgentStatusGrid /></div>
+              </div>
+            )}
+            {activeView === "knowledge-graph" && <KnowledgeGraphView />}
+            {activeView === "papers" && <PapersView />}
+            {activeView === "meeting" && <MeetingRoom />}
 
             {/* Global views */}
             {activeView === "teams" && <TeamsView />}
