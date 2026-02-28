@@ -43,7 +43,7 @@ export function DashboardShell() {
   )
 
   return (
-    <div className="flex min-h-dvh h-dvh max-h-dvh w-full overflow-hidden">
+    <div className="flex h-dvh w-full overflow-hidden">
       {!isMobile && sidebarContent}
 
       <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
@@ -127,7 +127,7 @@ export function DashboardShell() {
 
 function OverviewView({ userName }: { userName: string }) {
   return (
-    <div className="flex h-full flex-col gap-4">
+    <div className="flex min-h-full flex-col gap-4">
       <div className="rounded-md border border-border bg-card/80 px-4 py-3">
         <p className="text-sm text-foreground">
           {"Welcome back, "}
@@ -139,7 +139,7 @@ function OverviewView({ userName }: { userName: string }) {
       </div>
       <AgentStatusGrid />
       <ApiMonitor />
-      <div className="min-h-0 flex-1">
+      <div className="min-h-[400px]">
         <ChatInterface />
       </div>
     </div>
