@@ -320,6 +320,7 @@ class BaseAgent:
                 else:
                     tool_result = self._call_tool(fn_name, fn_args)
                 result_meta: dict[str, Any] = {"tool": fn_name, "chars": len(tool_result)}
+                parsed: dict[str, Any] | None = None
                 try:
                     parsed = json.loads(tool_result)
                     if fn_name == "modal_sandbox" and isinstance(parsed, dict):
@@ -340,7 +341,18 @@ class BaseAgent:
                     result_msg = f"modal_sandbox exit {ec} --- stdout --- {out_block} --- stderr --- {err_block}"
                     yield self._emit("result", result_msg, **result_meta)
                 else:
-                    yield self._emit("result", f"{fn_name} returned ({len(tool_result)} chars)", **result_meta)
+                    # Verbose result message: show error or key fields instead of only char count
+                    if isinstance(parsed, dict):
+                        if parsed.get("error"):
+                            result_msg = f"{fn_name} error: {parsed['error']}"
+                            result_meta["error"] = parsed["error"]
+                        elif parsed.get("public_url"):
+                            result_msg = f"{fn_name}: report uploaded — {parsed['public_url']}"
+                        else:
+                            result_msg = f"{fn_name} returned ({len(tool_result)} chars)"
+                    else:
+                        result_msg = f"{fn_name} returned ({len(tool_result)} chars)"
+                    yield self._emit("result", result_msg, **result_meta)
 
                 # For sandbox results, give the model a readable format with stdout+stderr
                 tool_content = tool_result

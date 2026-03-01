@@ -3,7 +3,8 @@
 import { useEffect, useState, useCallback } from "react"
 import { Card, CardContent } from "@/components/ui/card"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { FileText, Download, Calendar, Loader2 } from "lucide-react"
+import { Button } from "@/components/ui/button"
+import { FileText, Download, Calendar, Loader2, FlaskConical } from "lucide-react"
 import { supabaseConfigured, fetchReportsForProject, type TaskReport } from "@/lib/supabase"
 
 function formatDate(dateStr: string): string {
@@ -62,6 +63,8 @@ interface ReportsViewProps {
 export function ReportsView({ projectId }: ReportsViewProps) {
   const [reports, setReports] = useState<TaskReport[]>([])
   const [loading, setLoading] = useState(true)
+  const [testLoading, setTestLoading] = useState(false)
+  const [testMessage, setTestMessage] = useState<{ type: "success" | "error"; text: string; url?: string } | null>(null)
 
   const loadReports = useCallback(async () => {
     setLoading(true)
@@ -74,6 +77,37 @@ export function ReportsView({ projectId }: ReportsViewProps) {
       setLoading(false)
     }
   }, [projectId])
+
+  const runTestPdf = useCallback(async () => {
+    setTestMessage(null)
+    setTestLoading(true)
+    try {
+      const res = await fetch("/api/swarm/test-report-pdf", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ project_id: projectId || null }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setTestMessage({ type: "error", text: data.error || data.detail || `Request failed: ${res.status}` })
+        return
+      }
+      if (data.error) {
+        setTestMessage({ type: "error", text: data.error })
+        return
+      }
+      if (data.public_url) {
+        setTestMessage({ type: "success", text: "PDF uploaded successfully.", url: data.public_url })
+        loadReports()
+      } else {
+        setTestMessage({ type: "success", text: "Tool returned no URL (check backend logs)." })
+      }
+    } catch (e) {
+      setTestMessage({ type: "error", text: e instanceof Error ? e.message : "Request failed" })
+    } finally {
+      setTestLoading(false)
+    }
+  }, [projectId, loadReports])
 
   useEffect(() => {
     if (!supabaseConfigured || !projectId) {
@@ -95,13 +129,50 @@ export function ReportsView({ projectId }: ReportsViewProps) {
 
   return (
     <div className="flex h-full flex-col gap-4">
-      <div className="flex items-center gap-2">
-        <FileText className="h-4 w-4 text-chart-1" />
-        <span className="text-sm font-medium text-foreground">Generated PDF Reports</span>
-        <span className="font-mono text-[10px] text-muted-foreground">
-          ({reports.length})
-        </span>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <FileText className="h-4 w-4 text-chart-1" />
+          <span className="text-sm font-medium text-foreground">Generated PDF Reports</span>
+          <span className="font-mono text-[10px] text-muted-foreground">
+            ({reports.length})
+          </span>
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={runTestPdf}
+          disabled={testLoading}
+          className="gap-1.5 font-mono text-xs"
+        >
+          {testLoading ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <FlaskConical className="h-3.5 w-3.5" />
+          )}
+          Test PDF upload
+        </Button>
       </div>
+      {testMessage && (
+        <div
+          className={
+            testMessage.type === "error"
+              ? "rounded-md border border-destructive/50 bg-destructive/10 px-3 py-2 font-mono text-xs text-destructive"
+              : "rounded-md border border-primary/40 bg-primary/10 px-3 py-2 font-mono text-xs text-foreground"
+          }
+        >
+          {testMessage.text}
+          {testMessage.url && (
+            <a
+              href={testMessage.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="ml-2 text-primary hover:underline"
+            >
+              Open PDF
+            </a>
+          )}
+        </div>
+      )}
 
       {loading ? (
         <div className="flex items-center justify-center py-16">
