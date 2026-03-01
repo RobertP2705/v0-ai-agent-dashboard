@@ -287,16 +287,42 @@ export function MeetingRoom({ projectId, teamId }: MeetingRoomProps = {}) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
   const userScrolledUpRef = useRef(false)
+  const hasAutoSummarizedRef = useRef(false)
+  const prevShowSummaryRef = useRef(false)
 
   // Detect meeting concluded (streaming went from true to false)
   useEffect(() => {
     if (isStreaming) {
       setWasStreaming(true)
       setMeetingConcluded(false)
+      hasAutoSummarizedRef.current = false
     } else if (wasStreaming && !isStreaming) {
       setMeetingConcluded(true)
     }
   }, [isStreaming, wasStreaming])
+
+  // Auto-run summarization when meeting concludes so TTS reads summary (each agent's perspective) instead of raw script
+  useEffect(() => {
+    if (
+      meetingConcluded &&
+      currentEvents.length > 0 &&
+      !showSummary &&
+      !meetingSummary.isLoading &&
+      !meetingSummary.error &&
+      !hasAutoSummarizedRef.current
+    ) {
+      hasAutoSummarizedRef.current = true
+      meetingSummary.generate(currentEvents, projectId ?? undefined)
+    }
+  }, [meetingConcluded, currentEvents.length, showSummary, meetingSummary.isLoading, meetingSummary.error, meetingSummary.generate, projectId])
+
+  // When switching to summary mode, clear TTS queue so only the summarized conversation is read (not the raw script)
+  useEffect(() => {
+    if (showSummary && !prevShowSummaryRef.current) {
+      ttsQueue.clearQueue()
+    }
+    prevShowSummaryRef.current = showSummary
+  }, [showSummary, ttsQueue])
 
   // Auto-scroll to currently playing entry
   useEffect(() => {
