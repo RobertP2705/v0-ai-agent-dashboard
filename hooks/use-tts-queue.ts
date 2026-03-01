@@ -60,8 +60,25 @@ export function useTTSQueue(enabled: boolean): TTSQueueControls {
   const prefetchingRef = useRef<Set<string>>(new Set())
   const enabledRef = useRef(enabled)
   const playbackRateRef = useRef(1)
+  const mountedRef = useRef(true)
   const onItemStartRef = useRef<((item: TTSQueueItem) => void) | null>(null)
   const onItemEndRef = useRef<((item: TTSQueueItem) => void) | null>(null)
+
+  // On unmount (e.g. user left meeting tab): stop playback and clear queue so we don't keep talking
+  useEffect(() => {
+    mountedRef.current = true
+    return () => {
+      mountedRef.current = false
+      if (audioRef.current) {
+        audioRef.current.onended = null
+        audioRef.current.onerror = null
+        audioRef.current.pause()
+        audioRef.current = null
+      }
+      queueRef.current = []
+      isProcessingRef.current = false
+    }
+  }, [])
 
   // Keep refs synced
   useEffect(() => {
@@ -101,6 +118,7 @@ export function useTTSQueue(enabled: boolean): TTSQueueControls {
   }, [])
 
   const processQueue = useCallback(async () => {
+    if (!mountedRef.current) return
     if (isProcessingRef.current) return
     if (queueRef.current.length === 0) {
       setState({
@@ -130,6 +148,7 @@ export function useTTSQueue(enabled: boolean): TTSQueueControls {
     if (!audioUrl) {
       const { voiceId } = getVoiceForAgent(item.agent)
       audioUrl = await fetchTTSAudio(item.text, voiceId)
+      if (!mountedRef.current) return
       if (audioUrl) cacheRef.current.set(item.id, audioUrl)
     }
 
@@ -152,6 +171,7 @@ export function useTTSQueue(enabled: boolean): TTSQueueControls {
       audio.play().catch(() => resolve())
     })
 
+    if (!mountedRef.current) return
     audioRef.current = null
     onItemEndRef.current?.(item)
     queueRef.current.shift()
