@@ -11,8 +11,8 @@ import {
   type SupabaseTask,
 } from "@/lib/graph-utils"
 
-// Lower threshold so more semantic edges are created (was 0.45; many valid links were dropped)
-const SEMANTIC_SIMILARITY_THRESHOLD = 0.32
+// Balance: high enough to avoid a dense tangle, low enough for memories to connect (was 0.32, orig 0.45)
+const SEMANTIC_SIMILARITY_THRESHOLD = 0.40
 const MAX_DOCUMENTS = 500
 const SEMANTIC_BATCH_SIZE = 8
 const SUPERMEMORY_CALL_TIMEOUT_MS = 8_000
@@ -48,7 +48,7 @@ async function computeSemanticEdges(
           searchMemoriesWithScore({
             q: typeof query === "string" ? query : String(query),
             containerTag,
-            limit: 10,
+            limit: 6,
           }),
           SUPERMEMORY_CALL_TIMEOUT_MS,
           "searchMemoriesWithScore",
@@ -114,7 +114,7 @@ async function computeCrossTypeEdges(
           searchMemoriesWithScore({
             q: item.text.slice(0, 300),
             containerTag,
-            limit: 6,
+            limit: 4,
           }),
           SUPERMEMORY_CALL_TIMEOUT_MS,
           "crossTypeSearch",
