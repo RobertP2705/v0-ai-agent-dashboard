@@ -49,7 +49,7 @@ function InstanceCounter({
   const [isLoading, setIsLoading] = useState(false)
 
   const handleScale = async (newCount: number) => {
-    if (newCount < 1 || newCount > 10 || isLoading) return
+    if (newCount < 0 || newCount > 10 || isLoading) return
     setIsLoading(true)
     try {
       await scaleAgent(teamId, agentType, newCount)
@@ -65,7 +65,7 @@ function InstanceCounter({
     <div className="flex items-center gap-1">
       <button
         onClick={() => handleScale(count - 1)}
-        disabled={count <= 1 || isLoading}
+        disabled={count <= 0 || isLoading}
         className="flex h-5 w-5 items-center justify-center rounded border border-border bg-secondary text-foreground/60 transition-colors hover:bg-secondary/80 hover:text-foreground disabled:opacity-30 disabled:cursor-not-allowed"
       >
         <Minus className="h-2.5 w-2.5" />
@@ -102,7 +102,7 @@ export function AgentStatusGrid({ projectId, teamId }: AgentStatusGridProps = {}
     if (!selectedTeam?.team_agents) return 1
     return selectedTeam.team_agents.filter(
       (ta) => ta.agent_type === agentType && ta.enabled
-    ).length || 1
+    ).length
   }
 
   const refresh = useCallback(async () => {
@@ -151,10 +151,12 @@ export function AgentStatusGrid({ projectId, teamId }: AgentStatusGridProps = {}
             {agents.map((agent) => {
               const Icon = agentIcons[agent.id] || BookOpen
               const count = getInstanceCount(agent.id)
+              const isDisabled = selectedTeam && count === 0
               const effectiveStatus: AgentStatus =
+                isDisabled ? "idle" :
                 isStreaming && activeAgents.includes(agent.id) ? "busy" : agent.status
               return (
-                <Card key={agent.id} className="border-border bg-card/80 backdrop-blur-sm">
+                <Card key={agent.id} className={cn("border-border bg-card/80 backdrop-blur-sm", isDisabled && "opacity-50")}>
                   <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 space-y-0 pb-2">
                     <div className="flex min-w-0 items-center gap-2">
                       <div className="flex h-7 w-7 items-center justify-center rounded-md bg-secondary">
@@ -162,9 +164,9 @@ export function AgentStatusGrid({ projectId, teamId }: AgentStatusGridProps = {}
                       </div>
                       <div>
                         <CardTitle className="text-sm font-medium">{agent.name}</CardTitle>
-                        {count > 1 && (
+                        {count !== 1 && (
                           <span className="font-mono text-[10px] text-muted-foreground">
-                            {count} instances
+                            {count === 0 ? "disabled" : `${count} instances`}
                           </span>
                         )}
                       </div>

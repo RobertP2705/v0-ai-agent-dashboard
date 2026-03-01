@@ -60,6 +60,12 @@ def run_research(
 
     agent_counts = _get_team_agent_counts(team_id)
 
+    if not agent_counts:
+        yield _event(task_id, "system", "error",
+                      "No agents are enabled for this team. Add agents in the team editor.")
+        db.update_task(task_id, {"status": "error"})
+        return db.get_task(task_id) or {}
+
     counts_str = ", ".join(f"{a} x{c}" for a, c in agent_counts.items())
     yield _event(task_id, "system", "action", f"Routing query to model ({counts_str})...")
 
@@ -234,7 +240,7 @@ def _get_team_agent_counts(team_id: str | None) -> dict[str, int]:
     for ta in team["team_agents"]:
         if ta.get("enabled", True) and ta["agent_type"] in AGENT_CLASSES:
             counts[ta["agent_type"]] = counts.get(ta["agent_type"], 0) + 1
-    return counts if counts else {aid: 1 for aid in AGENT_CLASSES}
+    return counts
 
 
 def _triage(query: str, model_remote: Any, agent_counts: dict[str, int]) -> dict:
@@ -323,11 +329,13 @@ def _build_roster(
     for agent_id, sub_tasks in agents_map.items():
         if agent_id not in AGENT_CLASSES:
             continue
+        count = agent_counts.get(agent_id, 0)
+        if count <= 0:
+            continue
         if not isinstance(sub_tasks, list):
             sub_tasks = [str(sub_tasks)] if sub_tasks else [query]
         if not sub_tasks:
             sub_tasks = [query]
-        count = agent_counts.get(agent_id, 1)
         base_name = AGENT_DEFINITIONS[agent_id]["name"]
 
         while len(sub_tasks) < count:

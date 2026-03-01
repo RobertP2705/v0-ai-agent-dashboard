@@ -4,7 +4,6 @@ import { useCallback, useEffect, useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { ScrollArea } from "@/components/ui/scroll-area"
 import {
   Dialog,
   DialogContent,
@@ -15,15 +14,14 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { Switch } from "@/components/ui/switch"
 import {
   Plus,
+  Minus,
   ArrowLeft,
   BookOpen,
   Terminal,
   Compass,
   Users,
-  X,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import {
@@ -31,20 +29,34 @@ import {
   fetchTeams,
   createTeam,
   deleteTeam,
-  addAgentToTeam,
-  removeAgentFromTeam,
-  toggleAgentInTeam,
   type Team,
-  type TeamAgent,
 } from "@/lib/supabase"
+import { scaleAgent } from "@/lib/swarm-client"
 import { TeamCard } from "./team-card"
-import { AgentPicker } from "./agent-picker"
 
-const agentMeta: Record<string, { icon: React.ElementType; color: string; label: string }> = {
-  "paper-collector": { icon: BookOpen, color: "text-chart-1", label: "Paper Collector" },
-  implementer: { icon: Terminal, color: "text-chart-2", label: "Implementer" },
-  "research-director": { icon: Compass, color: "text-chart-3", label: "Research Director" },
-}
+const AGENT_TYPES = [
+  {
+    id: "paper-collector",
+    name: "Paper Collector",
+    description: "Finds, reads, and synthesizes academic papers from arXiv and Semantic Scholar.",
+    icon: BookOpen,
+    color: "text-chart-1",
+  },
+  {
+    id: "implementer",
+    name: "Implementer",
+    description: "Reproduces papers in code, runs in Modal sandboxes, logs to W&B, pushes to GitHub.",
+    icon: Terminal,
+    color: "text-chart-2",
+  },
+  {
+    id: "research-director",
+    name: "Research Director",
+    description: "Identifies promising research directions, gap analysis, novelty assessment.",
+    icon: Compass,
+    color: "text-chart-3",
+  },
+] as const
 
 export function TeamsView() {
   const [teams, setTeams] = useState<Team[]>([])
@@ -90,20 +102,26 @@ export function TeamsView() {
     await loadTeams()
   }
 
-  const handleAddAgent = async (agentType: string) => {
-    if (!selectedTeam) return
-    await addAgentToTeam(selectedTeam.id, agentType)
-    await loadTeams()
+  const getAgentCount = (agentType: string): number => {
+    if (!selectedTeam?.team_agents) return 0
+    return selectedTeam.team_agents.filter(
+      (ta) => ta.agent_type === agentType && ta.enabled
+    ).length
   }
 
-  const handleRemoveAgent = async (agentRowId: string) => {
-    await removeAgentFromTeam(agentRowId)
-    await loadTeams()
-  }
+  const [scalingAgent, setScalingAgent] = useState<string | null>(null)
 
-  const handleToggleAgent = async (agentRowId: string, enabled: boolean) => {
-    await toggleAgentInTeam(agentRowId, enabled)
-    await loadTeams()
+  const handleScale = async (agentType: string, newCount: number) => {
+    if (!selectedTeam || newCount < 0 || newCount > 10 || scalingAgent) return
+    setScalingAgent(agentType)
+    try {
+      await scaleAgent(selectedTeam.id, agentType, newCount)
+      await loadTeams()
+    } catch {
+      // ignore
+    } finally {
+      setScalingAgent(null)
+    }
   }
 
   if (!supabaseConfigured) {
@@ -120,8 +138,7 @@ export function TeamsView() {
   }
 
   if (selectedTeam) {
-    const agents = selectedTeam.team_agents || []
-    const assignedTypes = agents.map((a) => a.agent_type)
+    const totalEnabled = AGENT_TYPES.reduce((sum, a) => sum + getAgentCount(a.id), 0)
 
     return (
       <div className="flex h-full flex-col gap-4">
@@ -140,75 +157,82 @@ export function TeamsView() {
           </div>
         </div>
 
-        <div className="grid flex-1 grid-cols-1 gap-4 md:grid-cols-2">
-          <Card className="flex flex-col border-border bg-card/80 backdrop-blur-sm">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium">Assigned Agents</CardTitle>
-            </CardHeader>
-            <CardContent className="flex-1">
-              <ScrollArea className="h-[400px]">
-                <div className="space-y-2">
-                  {agents.map((ta) => {
-                    const meta = agentMeta[ta.agent_type]
-                    const Icon = meta?.icon || Users
-                    return (
-                      <div
-                        key={ta.id}
-                        className="flex items-center gap-3 rounded-md border border-border bg-secondary/30 px-3 py-2.5"
-                      >
-                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-secondary">
-                          <Icon className={cn("h-4 w-4", meta?.color)} />
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <p className="text-xs font-medium text-foreground">
-                            {meta?.label || ta.agent_type}
-                          </p>
-                          <Badge
-                            variant="outline"
-                            className={cn(
-                              "font-mono text-[9px]",
-                              ta.enabled
-                                ? "border-success/30 text-success"
-                                : "border-muted text-muted-foreground"
-                            )}
-                          >
-                            {ta.enabled ? "enabled" : "disabled"}
-                          </Badge>
-                        </div>
-                        <Switch
-                          checked={ta.enabled}
-                          onCheckedChange={(checked) => handleToggleAgent(ta.id, checked)}
-                        />
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="h-7 w-7 p-0"
-                          onClick={() => handleRemoveAgent(ta.id)}
-                        >
-                          <X className="h-3.5 w-3.5 text-destructive" />
-                        </Button>
-                      </div>
-                    )
-                  })}
-                  {agents.length === 0 && (
-                    <p className="py-8 text-center font-mono text-xs text-muted-foreground">
-                      No agents assigned. Add agents from the picker.
-                    </p>
-                  )}
-                </div>
-              </ScrollArea>
-            </CardContent>
-          </Card>
+        <Card className="border-border bg-card/80 backdrop-blur-sm">
+          <CardHeader className="pb-2">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-sm font-medium">Agent Configuration</CardTitle>
+              <Badge variant="outline" className="font-mono text-[10px]">
+                {totalEnabled} agent{totalEnabled !== 1 ? "s" : ""} active
+              </Badge>
+            </div>
+            <p className="font-mono text-[10px] text-muted-foreground">
+              Set the number of instances for each agent type. Use 0 to exclude an agent.
+            </p>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {AGENT_TYPES.map((agent) => {
+                const Icon = agent.icon
+                const count = getAgentCount(agent.id)
+                const isScaling = scalingAgent === agent.id
+                const isDisabled = count === 0
 
-          <Card className="flex flex-col border-border bg-card/80 backdrop-blur-sm">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium">Add Agents</CardTitle>
-            </CardHeader>
-            <CardContent className="flex-1">
-              <AgentPicker assignedTypes={assignedTypes} onAdd={handleAddAgent} />
-            </CardContent>
-          </Card>
-        </div>
+                return (
+                  <div
+                    key={agent.id}
+                    className={cn(
+                      "flex items-center gap-3 rounded-md border border-border px-3 py-3 transition-opacity",
+                      isDisabled ? "bg-muted/30 opacity-50" : "bg-secondary/30"
+                    )}
+                  >
+                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-secondary">
+                      <Icon className={cn("h-4 w-4", agent.color)} />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs font-medium text-foreground">{agent.name}</p>
+                      <p className="font-mono text-[10px] text-muted-foreground line-clamp-1">
+                        {agent.description}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => handleScale(agent.id, count - 1)}
+                        disabled={count <= 0 || isScaling}
+                        className="flex h-6 w-6 items-center justify-center rounded border border-border bg-secondary text-foreground/60 transition-colors hover:bg-secondary/80 hover:text-foreground disabled:opacity-30 disabled:cursor-not-allowed"
+                      >
+                        <Minus className="h-3 w-3" />
+                      </button>
+                      <div className="flex items-center gap-1 px-1.5">
+                        <Users className="h-3 w-3 text-muted-foreground" />
+                        <span className="font-mono text-xs font-semibold tabular-nums w-3 text-center">
+                          {count}
+                        </span>
+                      </div>
+                      <button
+                        onClick={() => handleScale(agent.id, count + 1)}
+                        disabled={count >= 10 || isScaling}
+                        className="flex h-6 w-6 items-center justify-center rounded border border-border bg-secondary text-foreground/60 transition-colors hover:bg-secondary/80 hover:text-foreground disabled:opacity-30 disabled:cursor-not-allowed"
+                      >
+                        <Plus className="h-3 w-3" />
+                      </button>
+                    </div>
+                    <Badge
+                      variant="outline"
+                      className={cn(
+                        "font-mono text-[9px] min-w-[52px] justify-center",
+                        isDisabled
+                          ? "border-muted text-muted-foreground"
+                          : "border-success/30 text-success"
+                      )}
+                    >
+                      {isDisabled ? "off" : count === 1 ? "active" : `${count}x`}
+                    </Badge>
+                  </div>
+                )
+              })}
+            </div>
+          </CardContent>
+        </Card>
       </div>
     )
   }
