@@ -327,6 +327,81 @@ export async function fetchDashboardStats(): Promise<DashboardStats> {
   }
 }
 
+/** User-scoped dashboard stats (tasks from this user's projects only). */
+export async function fetchDashboardStatsForUser(userId: string): Promise<DashboardStats> {
+  const supabase = getSupabase()
+  const { data: projects, error: projErr } = await supabase
+    .from("research_projects")
+    .select("id")
+    .eq("user_id", userId)
+  if (projErr) throw projErr
+  const projectIds = (projects ?? []).map((p) => p.id)
+  if (projectIds.length === 0) {
+    return {
+      totalTasks: 0,
+      completedTasks: 0,
+      totalTokens: 0,
+      promptTokens: 0,
+      completionTokens: 0,
+      totalPapers: 0,
+      totalExperiments: 0,
+      totalDirections: 0,
+    }
+  }
+
+  const { data: taskRows, error: taskErr } = await supabase
+    .from("tasks")
+    .select("id, status, total_usage")
+    .in("project_id", projectIds)
+  if (taskErr) throw taskErr
+  const rows = taskRows ?? []
+  const taskIds = rows.map((t) => t.id)
+
+  let totalTokens = 0
+  let promptTokens = 0
+  let completionTokens = 0
+  let completedTasks = 0
+  for (const t of rows) {
+    const u = t.total_usage as { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number } | null
+    if (u) {
+      totalTokens += u.total_tokens ?? 0
+      promptTokens += u.prompt_tokens ?? 0
+      completionTokens += u.completion_tokens ?? 0
+    }
+    if (t.status === "completed") completedTasks++
+  }
+
+  if (taskIds.length === 0) {
+    return {
+      totalTasks: 0,
+      completedTasks: 0,
+      totalTokens,
+      promptTokens,
+      completionTokens,
+      totalPapers: 0,
+      totalExperiments: 0,
+      totalDirections: 0,
+    }
+  }
+
+  const [papers, experiments, directions] = await Promise.all([
+    supabase.from("papers").select("id", { count: "exact", head: true }).in("task_id", taskIds),
+    supabase.from("experiments").select("id", { count: "exact", head: true }).in("task_id", taskIds),
+    supabase.from("research_directions").select("id", { count: "exact", head: true }).in("task_id", taskIds),
+  ])
+
+  return {
+    totalTasks: rows.length,
+    completedTasks,
+    totalTokens,
+    promptTokens,
+    completionTokens,
+    totalPapers: papers.count ?? 0,
+    totalExperiments: experiments.count ?? 0,
+    totalDirections: directions.count ?? 0,
+  }
+}
+
 // ── Project CRUD ─────────────────────────────────────────────────────────
 
 export async function fetchProjects(): Promise<ResearchProject[]> {

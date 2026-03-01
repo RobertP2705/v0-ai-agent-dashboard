@@ -207,7 +207,7 @@ export function DashboardShell() {
             {/* Global views */}
             {activeView === "teams" && <TeamsView />}
             {activeView === "credits" && (
-              <ApiCreditsView userEmail={user?.email} />
+              <ApiCreditsView userEmail={user?.email} userId={user?.id} />
             )}
           </div>
         </main>

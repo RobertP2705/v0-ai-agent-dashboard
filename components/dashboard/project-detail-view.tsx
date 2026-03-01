@@ -3,7 +3,6 @@
 import { useState, useEffect } from "react"
 import {
   fetchProject,
-  updateProject,
   fetchTeams,
   type ResearchProject,
   type Team,
@@ -16,13 +15,6 @@ import { PapersView } from "@/components/dashboard/papers-view"
 import { KnowledgeGraphView } from "@/components/dashboard/knowledge-graph"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
 import { Users, FolderOpen, Link2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
@@ -60,18 +52,6 @@ export function ProjectDetailView({
       console.error("Failed to load project:", err)
     } finally {
       setLoading(false)
-    }
-  }
-
-  async function handleTeamChange(teamId: string) {
-    if (!project) return
-    try {
-      const updated = await updateProject(project.id, {
-        team_id: teamId === "none" ? null : teamId,
-      })
-      setProject(updated)
-    } catch (err) {
-      console.error("Failed to update team:", err)
     }
   }
 
@@ -133,7 +113,7 @@ export function ProjectDetailView({
     )
   }
 
-  // Default: Overview
+  // Default: Overview (team is read-only; change team only in Teams tab)
   const currentTeam = teams.find((t) => t.id === project.team_id)
 
   return (
@@ -143,31 +123,21 @@ export function ProjectDetailView({
         <CardContent className="flex flex-wrap items-center gap-4 py-3">
           <div className="flex items-center gap-2">
             <Link2 className="h-3.5 w-3.5 text-muted-foreground" />
-            <Select
-              value={project.team_id ?? "none"}
-              onValueChange={handleTeamChange}
-            >
-              <SelectTrigger className="h-7 w-[180px] text-xs">
-                <SelectValue placeholder="Assign team..." />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">No team</SelectItem>
-                {teams.map((t) => (
-                  <SelectItem key={t.id} value={t.id}>
-                    <span className="flex items-center gap-1.5">
-                      <Users className="h-3 w-3" />
-                      {t.name}
-                    </span>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            {currentTeam ? (
+              <span className="flex items-center gap-1.5 font-mono text-xs text-foreground">
+                <Users className="h-3 w-3" />
+                {currentTeam.name}
+                <span className="text-muted-foreground">
+                  ({currentTeam.team_agents?.filter((a) => a.enabled).length ?? 0} agents)
+                </span>
+              </span>
+            ) : (
+              <span className="font-mono text-xs text-muted-foreground">No team assigned</span>
+            )}
           </div>
-          {currentTeam && (
-            <span className="font-mono text-[10px] text-muted-foreground">
-              {currentTeam.team_agents?.filter((a) => a.enabled).length ?? 0} agents configured
-            </span>
-          )}
+          <span className="font-mono text-[10px] text-muted-foreground">
+            To change the team, go to the Teams tab.
+          </span>
           {project.description && (
             <p className="w-full font-mono text-[10px] text-muted-foreground">
               {project.description}

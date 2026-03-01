@@ -19,6 +19,20 @@ const agentLabels: Record<string, string> = {
   "research-director": "Research Director",
 }
 
+/** Short snippet: "Paper Collector (2), Implementer (1), Research Director (1)" for enabled agents. */
+export function getTeamAgentsSnippet(team: Team): string {
+  const agents = team.team_agents || []
+  const byType: Record<string, number> = {}
+  for (const a of agents) {
+    if (!a.enabled) continue
+    byType[a.agent_type] = (byType[a.agent_type] ?? 0) + 1
+  }
+  const parts = Object.entries(byType)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([type, count]) => `${agentLabels[type] || type} (${count})`)
+  return parts.length ? parts.join(", ") : "No agents"
+}
+
 interface TeamCardProps {
   team: Team
   onSelect: (team: Team) => void
@@ -28,6 +42,7 @@ interface TeamCardProps {
 export function TeamCard({ team, onSelect, onDelete }: TeamCardProps) {
   const agents = team.team_agents || []
   const enabledCount = agents.filter((a) => a.enabled).length
+  const snippet = getTeamAgentsSnippet(team)
 
   return (
     <Card
@@ -59,6 +74,9 @@ export function TeamCard({ team, onSelect, onDelete }: TeamCardProps) {
             {team.description}
           </p>
         )}
+        <p className="font-mono text-[10px] text-muted-foreground" title={snippet}>
+          {snippet}
+        </p>
         <div className="flex flex-wrap gap-1.5">
           {agents.map((ta) => {
             const cfg = agentIcons[ta.agent_type]

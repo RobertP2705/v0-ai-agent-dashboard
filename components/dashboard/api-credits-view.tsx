@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge"
 import { DollarSign, Key, Webhook, ExternalLink, User } from "lucide-react"
 import {
   supabaseConfigured,
-  fetchDashboardStats,
+  fetchDashboardStatsForUser,
   type DashboardStats,
 } from "@/lib/supabase"
 
@@ -14,19 +14,24 @@ const COST_PER_TOKEN = 0.000015
 
 interface ApiCreditsViewProps {
   userEmail?: string
+  userId?: string
 }
 
-export function ApiCreditsView({ userEmail }: ApiCreditsViewProps) {
+export function ApiCreditsView({ userEmail, userId }: ApiCreditsViewProps) {
   const [stats, setStats] = useState<DashboardStats | null>(null)
 
   const refresh = useCallback(async () => {
     if (!supabaseConfigured) return
     try {
-      setStats(await fetchDashboardStats())
+      if (userId) {
+        setStats(await fetchDashboardStatsForUser(userId))
+      } else {
+        setStats(null)
+      }
     } catch {
       // ignore
     }
-  }, [])
+  }, [userId])
 
   useEffect(() => {
     refresh()
@@ -148,7 +153,11 @@ export function ApiCreditsView({ userEmail }: ApiCreditsViewProps) {
         <CardContent>
           {!stats ? (
             <p className="py-4 text-center font-mono text-xs text-muted-foreground">
-              {supabaseConfigured ? "Loading usage data..." : "Connect Supabase to see usage data."}
+              {!userId && supabaseConfigured
+                ? "Sign in to see your usage."
+                : supabaseConfigured
+                  ? "Loading usage data..."
+                  : "Connect Supabase to see usage data."}
             </p>
           ) : (
             <div className="overflow-hidden rounded-md border border-border">

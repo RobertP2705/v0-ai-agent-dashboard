@@ -38,6 +38,7 @@ import {
   ArrowRight,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { getTeamAgentsSnippet } from "@/components/dashboard/team-card"
 
 interface ProjectsLandingProps {
   onSelectProject: (project: ResearchProject) => void
@@ -361,7 +362,9 @@ function CreateProjectDialog({
               <SelectItem value="none">No team</SelectItem>
               {teams.map((team) => (
                 <SelectItem key={team.id} value={team.id}>
-                  {team.name}
+                  <span className="block truncate" title={getTeamAgentsSnippet(team)}>
+                    {team.name} — {getTeamAgentsSnippet(team)}
+                  </span>
                 </SelectItem>
               ))}
             </SelectContent>
