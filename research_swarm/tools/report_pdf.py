@@ -169,7 +169,7 @@ def create_report_pdf(
         # Create the "reports" bucket in Supabase Dashboard (Storage) if it does not exist
         sb.storage.from_(bucket).upload(
             storage_path,
-            io.BytesIO(pdf_bytes),
+            pdf_bytes,
             file_options={"content-type": "application/pdf", "upsert": "true"},
         )
         public_url = f"{url}/storage/v1/object/public/{bucket}/{storage_path}"
