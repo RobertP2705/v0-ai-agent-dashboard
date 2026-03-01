@@ -166,7 +166,13 @@ def create_report_pdf(
         from supabase import create_client
         sb = create_client(url, key)
         bucket = "reports"
-        # Create the "reports" bucket in Supabase Dashboard (Storage) if it does not exist
+        # Create the bucket if it does not exist (public so public_url works)
+        try:
+            sb.storage.create_bucket(bucket, options={"public": True})
+        except Exception as create_err:
+            err_msg = str(create_err).lower()
+            if "already exists" not in err_msg and "duplicate" not in err_msg:
+                return {"error": f"Storage bucket create failed: {create_err}", "public_url": ""}
         sb.storage.from_(bucket).upload(
             storage_path,
             pdf_bytes,
