@@ -454,6 +454,7 @@ async def list_directions_endpoint(task_id: str | None = None):
     image=modal.Image.debian_slim(python_version="3.11").pip_install(
         "fastapi", "uvicorn", "sse-starlette", "pydantic>=2.10", "httpx",
         "arxiv>=2.1", "supabase>=2.11", "wandb>=0.19", "PyGithub>=2.5",
+        "reportlab>=4.2",
     ),
     secrets=[
         modal.Secret.from_name("huggingface-secret"),
