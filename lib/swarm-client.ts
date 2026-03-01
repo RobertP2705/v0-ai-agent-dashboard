@@ -77,8 +77,8 @@ export function streamResearch(
 
   const body: Record<string, unknown> = {
     query,
-    team_id: teamId,
-    project_id: projectId,
+    team_id: teamId ?? null,
+    project_id: projectId ?? null,
   }
   if (continueTaskId) body.continue_task_id = continueTaskId
 

@@ -106,19 +106,22 @@ def run_research(
     phase1_roster: list[tuple[str, str, str]] = []
     phase2_roster: list[tuple[str, str, str]] = []
 
-    if resume_phase >= 1 and resume_context:
-        # Resume from checkpoint: restore agent_results and roster info, skip triage and phase 1
-        yield _event(task_id, "system", "action", "Resuming from previous checkpoint...")
-        ar_data = resume_context.get("agent_results") or {}
-        for label, data in ar_data.items():
-            if isinstance(data, dict):
-                agent_results[label] = _agent_result_from_resume(label, data)
+    has_checkpoint = (
+        resume_context
+        and (resume_context.get("phase1_roster") or resume_context.get("phase2_roster"))
+    )
+    if resume_phase >= 0 and has_checkpoint:
+        # Resume from checkpoint: restore roster and optionally agent_results; skip triage (and phases we've already completed)
+        yield _event(task_id, "system", "action", f"Resuming from checkpoint (phase {resume_phase + 1})...")
         phase1_roster = [tuple(x) for x in resume_context.get("phase1_roster") or []]
         phase2_roster = [tuple(x) for x in resume_context.get("phase2_roster") or []]
-        # phase1_roster / phase2_roster stored as [agent_id, label]; we need (agent_id, label, sub_task)
-        # Rebuild 3-tuples with empty sub_task for phase2 (we rebuild phase2 sub_tasks below)
         phase1_roster = [(r[0], r[1], "") for r in phase1_roster if len(r) >= 2]
         phase2_roster = [(r[0], r[1], "") for r in phase2_roster if len(r) >= 2]
+        if resume_phase >= 1:
+            ar_data = resume_context.get("agent_results") or {}
+            for label, data in ar_data.items():
+                if isinstance(data, dict):
+                    agent_results[label] = _agent_result_from_resume(label, data)
         all_agent_ids = list({aid for aid, _, _ in phase1_roster + phase2_roster})
         db.update_task(task_id, {"status": "running", "assigned_agents": all_agent_ids or list(agent_counts.keys())})
     else:
@@ -182,8 +185,17 @@ def run_research(
         except Exception as exc:
             event_q.put(_event(task_id, label, "error", f"Agent failed: {exc}"))
 
-    # ── Phase 1: Run collectors first (skip when resuming from checkpoint) ───
+    # ── Phase 1: Run collectors first (skip when resuming with phase 1+ already done) ───
     if phase1_roster and not (resume_phase >= 1 and resume_context):
+        # Checkpoint before Phase 1 so timeout during Phase 1 still lets us resume (skip triage, re-run Phase 1)
+        if not (resume_phase >= 0 and resume_context):
+            db.update_task(task_id, {
+                "resume_phase": 0,
+                "resume_context": {
+                    "phase1_roster": [[aid, label] for aid, label, _ in phase1_roster],
+                    "phase2_roster": [[aid, label] for aid, label, _ in phase2_roster],
+                },
+            })
         labels1 = [label for _, label, _ in phase1_roster]
         yield _event(task_id, "system", "action", f"Phase 1 — Research: {', '.join(labels1)}")
         threads = []
@@ -268,6 +280,18 @@ def run_research(
         phase2_other = [(a, l, t) for a, l, t in phase2_with_task if a not in ("implementer", "pdf-agent")]
         phase2_ordered = phase2_impl + phase2_other + phase2_pdf
 
+        # Checkpoint at start of Phase 2 so timeout during Phase 2 still resumes here (not from Phase 1)
+        resume_payload_before_2 = {
+            "collector_summary": collector_summary,
+            "agent_results": {
+                label: {"agent_id": r.agent_id, "answer": r.answer, "usage": r.usage}
+                for label, r in agent_results.items()
+            },
+            "phase1_roster": [[aid, label] for aid, label, _ in phase1_roster],
+            "phase2_roster": [[aid, label] for aid, label, _ in phase2_roster],
+        }
+        db.update_task(task_id, {"resume_phase": 1, "resume_context": resume_payload_before_2})
+
         labels2 = [label for _, label, _ in phase2_with_task]
         yield _event(task_id, "system", "action", f"Phase 2 — Implementation: {', '.join(labels2)} (using research above)")
         for agent_id, label, sub_task in phase2_ordered:
@@ -309,6 +333,18 @@ def run_research(
 
     rd_in_roster = any(aid == "research-director" for aid, _, _ in phase1_roster)
     if impl_sandbox_parts and rd_in_roster:
+        # Checkpoint at start of Phase 3 so timeout during Phase 3 resumes here (not from Phase 1 or 2)
+        resume_payload_before_3 = {
+            "collector_summary": collector_summary,
+            "agent_results": {
+                label: {"agent_id": r.agent_id, "answer": r.answer, "usage": r.usage}
+                for label, r in agent_results.items()
+            },
+            "phase1_roster": [[aid, label] for aid, label, _ in phase1_roster],
+            "phase2_roster": [[aid, label] for aid, label, _ in phase2_roster],
+        }
+        db.update_task(task_id, {"resume_phase": 2, "resume_context": resume_payload_before_3})
+
         sandbox_context = "\n\n".join(impl_sandbox_parts)[:12000]
         followup_task = (
             "The implementer has finished running sandbox experiments. "

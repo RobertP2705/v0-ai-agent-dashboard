@@ -262,16 +262,34 @@ def list_task_reports(task_id: str | None = None, limit: int = 50) -> list[dict]
 
 
 def list_task_reports_for_project(project_id: str, limit: int = 50) -> list[dict]:
-    """List task_reports for all tasks in this project (service role, bypasses RLS)."""
+    """List task_reports for all tasks in this project (service role, bypasses RLS).
+    Also includes reports for tasks with project_id null (orphans) so PDFs from runs
+    that didn't receive project_id still show up."""
     sb = _get_client()
+    # Tasks for this project
     tasks = sb.table("tasks").select("id").eq("project_id", project_id).execute().data
     task_ids = [t["id"] for t in tasks] if tasks else []
-    if not task_ids:
+    # Orphan tasks (no project_id) so we still show their reports
+    try:
+        orphans = (
+            sb.table("tasks")
+            .select("id")
+            .is_("project_id", "null")
+            .order("created_at", desc=True)
+            .limit(100)
+            .execute()
+            .data
+        )
+        orphan_ids = [t["id"] for t in orphans] if orphans else []
+    except Exception:
+        orphan_ids = []
+    all_ids = list(dict.fromkeys(task_ids + orphan_ids))
+    if not all_ids:
         return []
     q = (
         sb.table("task_reports")
         .select("*")
-        .in_("task_id", task_ids)
+        .in_("task_id", all_ids)
         .order("created_at", desc=True)
         .limit(limit)
     )

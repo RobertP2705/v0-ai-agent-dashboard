@@ -64,16 +64,24 @@ interface ReportsViewProps {
 export function ReportsView({ projectId, teamId }: ReportsViewProps) {
   const [reports, setReports] = useState<TaskReport[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [testLoading, setTestLoading] = useState(false)
   const [testMessage, setTestMessage] = useState<{ type: "success" | "error"; text: string; url?: string } | null>(null)
 
   const loadReports = useCallback(async () => {
     setLoading(true)
+    setLoadError(null)
     try {
       const res = await fetch(`/api/swarm/projects/${encodeURIComponent(projectId)}/reports`)
       const data = await res.json().catch(() => [])
+      if (!res.ok) {
+        setLoadError((data && (data.error || data.detail)) || `Failed to load reports (${res.status})`)
+        setReports([])
+        return
+      }
       setReports(Array.isArray(data) ? data : [])
-    } catch {
+    } catch (e) {
+      setLoadError(e instanceof Error ? e.message : "Failed to load reports")
       setReports([])
     } finally {
       setLoading(false)
@@ -176,6 +184,11 @@ export function ReportsView({ projectId, teamId }: ReportsViewProps) {
         </div>
       )}
 
+      {loadError && (
+        <div className="rounded-md border border-destructive/50 bg-destructive/10 px-3 py-2 font-mono text-xs text-destructive">
+          {loadError}
+        </div>
+      )}
       {loading ? (
         <div className="flex items-center justify-center py-16">
           <Loader2 className="h-5 w-5 animate-spin text-primary" />

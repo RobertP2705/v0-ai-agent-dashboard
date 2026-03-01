@@ -37,8 +37,10 @@ export async function POST(req: NextRequest) {
     }
 
     const basePayload = { ...body }
-    if (body.project_id) basePayload.project_id = body.project_id
-    if (continueTaskId) basePayload.continue_task_id = continueTaskId
+    basePayload.query = typeof body.query === "string" ? body.query : ""
+    basePayload.team_id = body.team_id ?? null
+    basePayload.project_id = body.project_id ?? null
+    basePayload.continue_task_id = continueTaskId ?? body.continue_task_id ?? null
 
     const payload =
       memoryContext.length > 0
