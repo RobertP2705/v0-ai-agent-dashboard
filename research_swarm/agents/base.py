@@ -332,19 +332,25 @@ class BaseAgent:
                     self._last_sandbox_stdout = stdout_text
                     self._last_sandbox_stderr = stderr_text
                     last_sandbox_failed = ec != 0
-                    # Print full stdout/stderr to chat (so user and UI see it)
                     out_block = (stdout_text.strip() or "(no stdout)")[:8000]
                     err_block = (stderr_text.strip() or "(no stderr)")[:4000]
-                    chat_out = f"=== SANDBOX STDOUT ===\n{out_block}\n=== SANDBOX STDERR ===\n{err_block}"
-                    yield self._emit("thought", chat_out)
-                    yield self._emit("result", f"modal_sandbox exit {ec}. See output above.", **result_meta)
+                    result_msg = f"modal_sandbox exit {ec} --- stdout --- {out_block} --- stderr --- {err_block}"
+                    yield self._emit("result", result_msg, **result_meta)
                 else:
                     yield self._emit("result", f"{fn_name} returned ({len(tool_result)} chars)", **result_meta)
 
+                # For sandbox results, give the model a readable format with stdout+stderr
+                tool_content = tool_result
+                if fn_name == "modal_sandbox" and "exit_code" in result_meta:
+                    tool_content = (
+                        f"exit_code: {result_meta['exit_code']}\n"
+                        f"--- stdout ---\n{result_meta.get('stdout', '') or '(no stdout)'}\n"
+                        f"--- stderr ---\n{result_meta.get('stderr', '') or '(no stderr)'}"
+                    )
                 messages.append({
                     "role": "tool",
                     "tool_call_id": tc["id"],
-                    "content": tool_result,
+                    "content": tool_content,
                 })
 
         answer = "Max iterations reached."

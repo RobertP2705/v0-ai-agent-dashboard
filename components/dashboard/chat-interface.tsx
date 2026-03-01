@@ -331,7 +331,6 @@ function CodeViewer({ code, language, stdout, stderr, exitCode }: {
 
 function SandboxCard({ event, resultEvent }: { event: LogEntry; resultEvent?: LogEntry }) {
   const [codeOpen, setCodeOpen] = useState(true)
-  const [stdoutOpen, setStdoutOpen] = useState(true)
   const [copied, setCopied] = useState(false)
   const code = event.meta?.code as string | undefined
   const exitCode = resultEvent?.meta?.exit_code as number | undefined
@@ -400,18 +399,15 @@ function SandboxCard({ event, resultEvent }: { event: LogEntry; resultEvent?: Lo
       )}
 
       {stdout && (
-        <Collapsible open={stdoutOpen} onOpenChange={setStdoutOpen}>
-          <CollapsibleTrigger className="w-full flex items-center gap-1.5 px-2 py-1 border-t border-border bg-secondary/20 hover:bg-secondary/40 transition-colors">
+        <div className="border-t border-success/20">
+          <div className="flex items-center gap-1.5 px-2 py-1 bg-success/10">
             <Terminal className="h-2.5 w-2.5 text-success" />
-            <span className="font-mono text-[9px] text-success/80 flex-1 text-left">stdout</span>
-            <ChevronDown className={cn("h-2.5 w-2.5 text-muted-foreground transition-transform", !stdoutOpen && "-rotate-90")} />
-          </CollapsibleTrigger>
-          <CollapsibleContent>
-            <pre className="max-h-[200px] overflow-auto p-2 font-mono text-[10px] text-foreground/70 leading-relaxed bg-secondary/10">
-              <code>{stdout}</code>
-            </pre>
-          </CollapsibleContent>
-        </Collapsible>
+            <span className="font-mono text-[9px] text-success/80">stdout</span>
+          </div>
+          <pre className="max-h-[200px] overflow-auto p-2 font-mono text-[10px] text-foreground/70 leading-relaxed bg-success/5">
+            <code>{stdout}</code>
+          </pre>
+        </div>
       )}
 
       {stderr && (

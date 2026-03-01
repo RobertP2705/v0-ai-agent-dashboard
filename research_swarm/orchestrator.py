@@ -205,6 +205,46 @@ def run_research(
         while not event_q.empty():
             yield event_q.get()
 
+    # ── Phase 3: Route sandbox stdout back to research-director ─────────
+    impl_sandbox_parts = []
+    for label, r in agent_results.items():
+        if any(aid == "implementer" and l == label for aid, l, _ in roster):
+            if r.answer:
+                impl_sandbox_parts.append(f"## {label}\n{r.answer}")
+
+    rd_in_roster = any(aid == "research-director" for aid, _, _ in phase1_roster)
+    if impl_sandbox_parts and rd_in_roster:
+        sandbox_context = "\n\n".join(impl_sandbox_parts)[:12000]
+        followup_task = (
+            "The implementer has finished running sandbox experiments. "
+            "Below is the full stdout/stderr output from the sandbox executions.\n\n"
+            "Review these results and provide an updated research analysis that incorporates "
+            "the execution outcomes — what worked, what failed, key findings from stdout.\n\n"
+            + sandbox_context
+        )
+        yield _event(task_id, "system", "action", "Phase 3 — Research Director reviewing sandbox results")
+        rd_threads = []
+        for agent_id, label, _ in phase1_roster:
+            if agent_id != "research-director":
+                continue
+            review_label = f"{label} (review)"
+            t = threading.Thread(target=_run_agent, args=(agent_id, review_label, followup_task), daemon=True)
+            rd_threads.append(t)
+            t.start()
+        while any(t.is_alive() for t in rd_threads) or not event_q.empty():
+            try:
+                ev = event_q.get(timeout=0.15)
+                yield ev
+                if ev.get("type") == "error" and "Cancelled by user" in ev.get("message", ""):
+                    db.update_task(task_id, {"status": "cancelled"})
+                    while not event_q.empty():
+                        yield event_q.get()
+                    return db.get_task(task_id) or {}
+            except queue.Empty:
+                continue
+        while not event_q.empty():
+            yield event_q.get()
+
     # ── Merge ─────────────────────────────────────────────────────────────
     yield _event(task_id, "system", "action", "Synthesizing results...")
     try:
