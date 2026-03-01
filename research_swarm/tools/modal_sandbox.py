@@ -21,7 +21,7 @@ TOOL_SCHEMA = {
     "type": "function",
     "function": {
         "name": "modal_sandbox",
-        "description": "Execute Python code in an isolated Modal sandbox container with optional GPU. Use this to reproduce paper implementations, run experiments, and test code. The container has git installed. WANDB_API_KEY and GITHUB_TOKEN are available. Returns stdout, stderr, and exit code. Tip: use subprocess.run(..., capture_output=True, text=True) and print(result.stdout, result.stderr, result.returncode) so output is always captured.",
+        "description": "Execute Python code in an isolated Modal sandbox container with optional GPU. Use this to reproduce paper implementations, run experiments, and test code. The container has git installed. WANDB_API_KEY and GITHUB_TOKEN are available. Returns stdout, stderr, and exit code. print() output is captured. For subprocesses, use subprocess.run(..., capture_output=True, text=True) then print(result.stdout, result.stderr, result.returncode) to see their output.",
         "parameters": {
             "type": "object",
             "properties": {
@@ -171,11 +171,12 @@ def modal_sandbox(
                 progress_queue.put(("done", res))
             return res
 
-        # Unbuffered: -u and PYTHONUNBUFFERED so we capture output from print() and from os.system() children
+        # PTY so Python sees a TTY and line-buffers stdout (print() is captured). -u and PYTHONUNBUFFERED as backup.
         proc = sb.exec(
             "python", "-u", "/root/experiment.py",
             timeout=timeout,
             env={"PYTHONUNBUFFERED": "1"},
+            pty=True,
         )
         if progress_queue is not None:
             stdout_chunks: list[str] = []
