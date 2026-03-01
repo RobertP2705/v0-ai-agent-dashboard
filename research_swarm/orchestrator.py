@@ -65,7 +65,15 @@ def run_research(
     try:
         routing = _triage(augmented_query, model_remote, agent_counts)
     except Exception as exc:
-        yield _event(task_id, "system", "error", f"Triage failed: {exc}")
+        msg = str(exc)
+        # If Modal couldn't deserialize the remote exception, the message often contains "remote traceback"
+        if "remote traceback" in msg.lower() or "deserialization failed" in msg.lower():
+            msg = (
+                "Model server error (vLLM engine may have crashed or OOM). "
+                "Check Modal logs for the remote traceback. "
+                "Original: " + msg[:500]
+            )
+        yield _event(task_id, "system", "error", f"Triage failed: {msg}")
         db.update_task(task_id, {"status": "error"})
         return db.get_task(task_id) or {}
 
@@ -77,10 +85,12 @@ def run_research(
         "assigned_agents": all_agent_ids,
     })
 
-    labels = [label for _, label, _ in roster]
-    yield _event(task_id, "system", "action", f"Launching {len(roster)} agent(s) in parallel: {', '.join(labels)}")
+    # Phase 1: collectors (paper-collector, research-director). Phase 2: implementer runs after with their results.
+    PHASE1_AGENTS = {"paper-collector", "research-director"}
+    PHASE2_AGENTS = {"implementer"}
+    phase1_roster = [(aid, label, st) for aid, label, st in roster if aid in PHASE1_AGENTS]
+    phase2_roster = [(aid, label, st) for aid, label, st in roster if aid in PHASE2_AGENTS]
 
-    # ── Parallel fan-out ──────────────────────────────────────────────────
     event_q: queue.Queue[dict | None] = queue.Queue()
     agent_results: dict[str, AgentResult] = {}
     results_lock = threading.Lock()
@@ -92,7 +102,7 @@ def run_research(
             return
 
         agent = agent_cls(model_remote, task_id=task_id, instance_label=label)
-        event_q.put(_event(task_id, label, "thought", f"Starting: {sub_task}"))
+        event_q.put(_event(task_id, label, "thought", f"Starting: {sub_task[:300]}{'...' if len(sub_task) > 300 else ''}"))
 
         try:
             gen = agent.run(sub_task)
@@ -114,26 +124,77 @@ def run_research(
         except Exception as exc:
             event_q.put(_event(task_id, label, "error", f"Agent failed: {exc}"))
 
-    threads = []
-    for agent_id, label, sub_task in roster:
-        t = threading.Thread(target=_run_agent, args=(agent_id, label, sub_task), daemon=True)
-        threads.append(t)
-        t.start()
+    # ── Phase 1: Run collectors first ─────────────────────────────────────
+    if phase1_roster:
+        labels1 = [label for _, label, _ in phase1_roster]
+        yield _event(task_id, "system", "action", f"Phase 1 — Research: {', '.join(labels1)}")
+        threads = []
+        for agent_id, label, sub_task in phase1_roster:
+            t = threading.Thread(target=_run_agent, args=(agent_id, label, sub_task), daemon=True)
+            threads.append(t)
+            t.start()
+        while any(t.is_alive() for t in threads) or not event_q.empty():
+            try:
+                ev = event_q.get(timeout=0.15)
+                yield ev
+                if ev.get("type") == "error" and "Cancelled by user" in ev.get("message", ""):
+                    db.update_task(task_id, {"status": "cancelled"})
+                    while not event_q.empty():
+                        yield event_q.get()
+                    return db.get_task(task_id) or {}
+            except queue.Empty:
+                continue
+        while not event_q.empty():
+            yield event_q.get()
 
-    while any(t.is_alive() for t in threads) or not event_q.empty():
-        try:
-            ev = event_q.get(timeout=0.15)
-            yield ev
-            if ev.get("type") == "error" and "Cancelled by user" in ev.get("message", ""):
-                db.update_task(task_id, {"status": "cancelled"})
-                while not event_q.empty():
-                    yield event_q.get()
-                return db.get_task(task_id) or {}
-        except queue.Empty:
-            continue
+    # Research context for implementer (so it does not call URLs first)
+    collector_summary = ""
+    if phase1_roster and agent_results:
+        parts = [f"## {label}\n{result.answer}" for label, result in agent_results.items()]
+        collector_summary = "\n\n".join(parts)
 
-    while not event_q.empty():
-        yield event_q.get()
+    # ── Phase 2: Implementer with research context; must use modal_sandbox ──
+    if phase2_roster:
+        impl_instruction = (
+            "Use the research context below. Do NOT call fetch_url or web_search first — "
+            "repo URLs and info are already in the context. "
+            "Your first step MUST be modal_sandbox: git clone the repo(s) mentioned above, install deps, and run the code."
+        )
+        if collector_summary:
+            impl_instruction = (
+                "## Research from Paper Collector / Research Director (use this; do not re-fetch):\n\n"
+                + collector_summary[:12000]
+                + "\n\n---\n\n"
+                + impl_instruction
+            )
+        else:
+            impl_instruction = impl_instruction + f"\n\nUser request: {query[:500]}"
+
+        # Give implementer the context-aware task
+        phase2_with_task = []
+        for agent_id, label, _ in phase2_roster:
+            phase2_with_task.append((agent_id, label, impl_instruction if agent_id == "implementer" else query))
+
+        labels2 = [label for _, label, _ in phase2_with_task]
+        yield _event(task_id, "system", "action", f"Phase 2 — Implementation: {', '.join(labels2)} (using research above)")
+        threads = []
+        for agent_id, label, sub_task in phase2_with_task:
+            t = threading.Thread(target=_run_agent, args=(agent_id, label, sub_task), daemon=True)
+            threads.append(t)
+            t.start()
+        while any(t.is_alive() for t in threads) or not event_q.empty():
+            try:
+                ev = event_q.get(timeout=0.15)
+                yield ev
+                if ev.get("type") == "error" and "Cancelled by user" in ev.get("message", ""):
+                    db.update_task(task_id, {"status": "cancelled"})
+                    while not event_q.empty():
+                        yield event_q.get()
+                    return db.get_task(task_id) or {}
+            except queue.Empty:
+                continue
+        while not event_q.empty():
+            yield event_q.get()
 
     # ── Merge ─────────────────────────────────────────────────────────────
     yield _event(task_id, "system", "action", "Synthesizing results...")
@@ -250,11 +311,13 @@ def _build_roster(
 ) -> list[tuple[str, str, str]]:
     """Build a list of (agent_id, display_label, sub_task) tuples.
 
-    If a team has N instances of an agent type, spawn up to N instances,
-    each with a different sub-task from the triage output.
+    Uses triage output for sub-tasks when an agent is mentioned; otherwise
+    ensures EVERY enabled agent (in agent_counts) runs with the full query,
+    so we never run only one agent when the team has multiple.
     """
     roster: list[tuple[str, str, str]] = []
     agents_map = routing.get("agents", {})
+    roster_agent_ids = set()
 
     for agent_id, sub_tasks in agents_map.items():
         if agent_id not in AGENT_CLASSES:
@@ -273,6 +336,23 @@ def _build_roster(
         for i, st in enumerate(sub_tasks):
             label = f"{base_name} #{i + 1}" if count > 1 else base_name
             roster.append((agent_id, label, st or query))
+            roster_agent_ids.add(agent_id)
+
+    # Ensure every enabled agent runs: add any that triage didn't assign
+    for agent_id, count in agent_counts.items():
+        if count <= 0 or agent_id not in AGENT_CLASSES or agent_id in roster_agent_ids:
+            continue
+        base_name = AGENT_DEFINITIONS[agent_id]["name"]
+        sub_task = query
+        if agent_id == "implementer":
+            sub_task = (
+                f"Using the user request below: find any mentioned repo/codebase (web_search/fetch_url), "
+                f"then clone and run it in the sandbox (modal_sandbox). User request: {query[:300]}"
+            )
+        for i in range(count):
+            label = f"{base_name} #{i + 1}" if count > 1 else base_name
+            roster.append((agent_id, label, sub_task))
+        roster_agent_ids.add(agent_id)
 
     return roster
 

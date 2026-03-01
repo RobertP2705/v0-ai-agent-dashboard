@@ -1,4 +1,9 @@
-"""Modal Sandbox tool -- runs arbitrary Python code in an isolated container."""
+"""Modal Sandbox tool -- runs arbitrary Python code in an isolated container.
+
+Sandboxes are created, run your code, then terminated (ephemeral). In the Modal
+dashboard (modal.com or `modal dashboard`), look under the app "research-swarm"
+for Runs/Jobs; each sandbox run may appear briefly and then disappear when done.
+"""
 
 from __future__ import annotations
 
@@ -8,27 +13,7 @@ TOOL_SCHEMA = {
     "type": "function",
     "function": {
         "name": "modal_sandbox",
-        "description": (
-            "Execute Python code in an isolated Modal sandbox container with optional GPU. "
-<<<<<<< Updated upstream
-            "Use this to reproduce paper implementations, run experiments, "
-            "and test code. The sandbox has WANDB_API_KEY and GITHUB_TOKEN "
-            "environment variables available. Returns stdout, stderr, and exit code."
-<<<<<<< HEAD
->>>>>>> b1d96c3 (wand working)
-=======
-            "Execute Python code in an isolated Modal sandbox container with optional GPU. "
-            "Use this to reproduce paper implementations, run experiments, "
-            "and test code. The sandbox has WANDB_API_KEY and GITHUB_TOKEN "
-            "environment variables available. Returns stdout, stderr, and exit code."
->>>>>>> b1d96c3 (wand working)
-=======
-            "The container has git installed. Use for experiments, git clone, etc. "
-            "WANDB_API_KEY and GITHUB_TOKEN are available. Returns stdout, stderr, and exit code."
->>>>>>> Stashed changes
-=======
->>>>>>> b18c20807117ea39a3ed0b7a4eb38de785851667
-        ),
+        "description": "Execute Python code in an isolated Modal sandbox container with optional GPU. Use this to reproduce paper implementations, run experiments, and test code. The container has git installed. WANDB_API_KEY and GITHUB_TOKEN are available. Returns stdout, stderr, and exit code.",
         "parameters": {
             "type": "object",
             "properties": {
@@ -61,6 +46,18 @@ TOOL_SCHEMA = {
 }
 
 
+def _sandbox_result(stdout: str, stderr: str, exit_code: int | None, error: str | None = None) -> dict:
+    """Always return a dict with int exit_code so the agent never sees None."""
+    out = {
+        "stdout": (stdout or "")[:10000],
+        "stderr": (stderr or "")[:5000],
+        "exit_code": exit_code if exit_code is not None else -1,
+    }
+    if error:
+        out["stderr"] = (out["stderr"] + "\n[Sandbox error] " + error).strip()[:5000]
+    return out
+
+
 def modal_sandbox(
     code: str,
     requirements: list[str] | None = None,
@@ -69,7 +66,10 @@ def modal_sandbox(
     timeout: int = 600,
 ) -> dict:
     reqs = requirements or []
-    app_ref = modal.App.lookup("research-swarm", create_if_missing=True)
+    try:
+        app_ref = modal.App.lookup("research-swarm", create_if_missing=True)
+    except Exception as e:
+        return _sandbox_result("", "", -1, f"App lookup failed: {e}")
 
     image = (
         modal.Image.debian_slim(python_version="3.11")
@@ -86,28 +86,43 @@ def modal_sandbox(
     if gpu:
         sandbox_kwargs["gpu"] = gpu
 
-    sb = modal.Sandbox.create(**sandbox_kwargs)
+    try:
+        sb = modal.Sandbox.create(**sandbox_kwargs)
+    except Exception as e:
+        return _sandbox_result("", "", -1, f"Sandbox.create failed: {e}")
+
     try:
         if setup_commands:
             for cmd in setup_commands:
                 setup_proc = sb.exec("bash", "-c", cmd)
                 setup_proc.wait()
+                if setup_proc.returncode != 0:
+                    err = (setup_proc.stderr.read() or "")[:2000]
+                    return _sandbox_result(
+                        setup_proc.stdout.read() or "",
+                        err,
+                        setup_proc.returncode,
+                        f"setup_commands failed: {cmd}",
+                    )
 
         write_proc = sb.exec(
             "bash", "-c",
             f"cat > /root/experiment.py << 'PYEOF'\n{code}\nPYEOF",
         )
         write_proc.wait()
+        if write_proc.returncode != 0:
+            return _sandbox_result("", write_proc.stderr.read() or "", write_proc.returncode or -1, "Failed to write experiment.py")
 
         proc = sb.exec("python", "/root/experiment.py", timeout=timeout)
         stdout = proc.stdout.read()
         stderr = proc.stderr.read()
         proc.wait()
-
-        return {
-            "stdout": stdout[:10000],
-            "stderr": stderr[:5000],
-            "exit_code": proc.returncode,
-        }
+        exit_code = proc.returncode if proc.returncode is not None else -1
+        return _sandbox_result(stdout, stderr, exit_code)
+    except Exception as e:
+        return _sandbox_result("", "", -1, str(e))
     finally:
-        sb.terminate()
+        try:
+            sb.terminate()
+        except Exception:
+            pass
