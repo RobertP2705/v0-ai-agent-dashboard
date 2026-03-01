@@ -156,38 +156,57 @@ export function KnowledgeGraphView({ projectId }: KnowledgeGraphViewProps = {}) 
     return () => clearInterval(interval)
   }, [loading])
 
-  // Measure the graph wrapper so the canvas fills the card and doesn't get cut off
-  useEffect(() => {
+  // Measure the graph wrapper so the canvas fills the whole area (no empty gap)
+  const measureWrapper = useCallback(() => {
     const el = wrapperRef.current
     if (!el) return
-    const measure = () => {
-      const rect = el.getBoundingClientRect()
-      const w = Math.floor(rect.width)
-      const h = Math.floor(rect.height)
-      if (w > 0 && h > 0) {
-        setDimensions((prev) => (prev.width === w && prev.height === h ? prev : { width: w, height: h }))
-      }
-    }
-    measure()
-    const raf = requestAnimationFrame(measure)
-    const late = setTimeout(measure, 200)
-    const late2 = setTimeout(measure, 500)
-    const observer = new ResizeObserver(measure)
-    observer.observe(el)
-    return () => {
-      cancelAnimationFrame(raf)
-      clearTimeout(late)
-      clearTimeout(late2)
-      observer.disconnect()
+    const rect = el.getBoundingClientRect()
+    const w = Math.floor(rect.width)
+    const h = Math.floor(rect.height)
+    if (w > 0 && h > 0) {
+      setDimensions((prev) => (prev.width === w && prev.height === h ? prev : { width: w, height: h }))
     }
   }, [])
 
-  // Auto-fit to view once the simulation settles so the whole graph is visible and not cut off
+  useEffect(() => {
+    const el = wrapperRef.current
+    if (!el) return
+    measureWrapper()
+    const raf = requestAnimationFrame(measureWrapper)
+    const t1 = setTimeout(measureWrapper, 100)
+    const t2 = setTimeout(measureWrapper, 400)
+    const t3 = setTimeout(measureWrapper, 800)
+    const observer = new ResizeObserver(measureWrapper)
+    observer.observe(el)
+    return () => {
+      cancelAnimationFrame(raf)
+      clearTimeout(t1)
+      clearTimeout(t2)
+      clearTimeout(t3)
+      observer.disconnect()
+    }
+  }, [measureWrapper])
+
+  // Re-measure when graph data loads so canvas size matches wrapper (fills gap)
+  useEffect(() => {
+    if (!graphData?.nodes?.length) return
+    measureWrapper()
+    const t1 = setTimeout(measureWrapper, 50)
+    const t2 = setTimeout(measureWrapper, 250)
+    const t3 = setTimeout(measureWrapper, 600)
+    return () => {
+      clearTimeout(t1)
+      clearTimeout(t2)
+      clearTimeout(t3)
+    }
+  }, [graphData?.nodes?.length, measureWrapper])
+
+  // Auto-fit so the graph fills the view (minimal padding = no big empty gap)
   useEffect(() => {
     if (!graphData || graphData.nodes.length === 0) return
     const timer = setTimeout(() => {
       if (graphRef.current && dimensions.width > 0 && dimensions.height > 0) {
-        graphRef.current.zoomToFit(400, 100)
+        graphRef.current.zoomToFit(400, 24)
         hasAutoFit.current = true
       }
     }, 1200)
@@ -278,7 +297,7 @@ export function KnowledgeGraphView({ projectId }: KnowledgeGraphViewProps = {}) 
 
   const handleFitView = () => {
     if (graphRef.current) {
-      graphRef.current.zoomToFit(500, 80)
+      graphRef.current.zoomToFit(400, 24)
     }
   }
 
