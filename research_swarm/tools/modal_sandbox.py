@@ -21,7 +21,7 @@ TOOL_SCHEMA = {
     "type": "function",
     "function": {
         "name": "modal_sandbox",
-        "description": "Execute Python code in an isolated Modal sandbox container with optional GPU. Use this to reproduce paper implementations, run experiments, and test code. The container has git installed. WANDB_API_KEY and GITHUB_TOKEN are available. Returns stdout, stderr, and exit code.",
+        "description": "Execute Python code in an isolated Modal sandbox container with optional GPU. Use this to reproduce paper implementations, run experiments, and test code. The container has git installed. WANDB_API_KEY and GITHUB_TOKEN are available. Returns stdout, stderr, and exit code. Tip: use subprocess.run(..., capture_output=True, text=True) and print(result.stdout, result.stderr, result.returncode) so output is always captured.",
         "parameters": {
             "type": "object",
             "properties": {
@@ -54,6 +54,10 @@ TOOL_SCHEMA = {
 }
 
 
+# Heredoc delimiter (quoted in the shell so user code is not expanded). Must not appear in user code.
+_EXPERIMENT_END = "EXPERIMENT_END_MARKER"
+
+
 def _sandbox_result(stdout: str, stderr: str, exit_code: int | None, error: str | None = None) -> dict:
     """Always return a dict with int exit_code so the agent never sees None."""
     out = {
@@ -63,6 +67,12 @@ def _sandbox_result(stdout: str, stderr: str, exit_code: int | None, error: str 
     }
     if error:
         out["stderr"] = (out["stderr"] + "\n[Sandbox error] " + error).strip()[:5000]
+    # When we got no output at all, add a hint so the model knows capture may have failed
+    if not (out["stdout"] or out["stderr"]) and out["exit_code"] != 0:
+        out["stderr"] = (
+            out["stderr"] + "\n[No stdout/stderr captured. Process may have been killed, failed to start, "
+            "or streams were not connected. Try using subprocess.run(..., capture_output=True) and print() the result.]"
+        ).strip()[:5000]
     return out
 
 
@@ -148,7 +158,7 @@ def modal_sandbox(
 
         write_proc = sb.exec(
             "bash", "-c",
-            f"cat > /root/experiment.py << 'PYEOF'\n{code}\nPYEOF",
+            f"cat > /root/experiment.py << '{_EXPERIMENT_END}'\n{code}\n{_EXPERIMENT_END}",
         )
         write_proc.wait()
         if write_proc.returncode != 0:
@@ -161,8 +171,12 @@ def modal_sandbox(
                 progress_queue.put(("done", res))
             return res
 
-        # Use -u so print() flushes immediately; otherwise we get no stdout until process exits
-        proc = sb.exec("python", "-u", "/root/experiment.py", timeout=timeout)
+        # Unbuffered: -u and PYTHONUNBUFFERED so we capture output from print() and from os.system() children
+        proc = sb.exec(
+            "python", "-u", "/root/experiment.py",
+            timeout=timeout,
+            env={"PYTHONUNBUFFERED": "1"},
+        )
         if progress_queue is not None:
             stdout_chunks: list[str] = []
             stderr_chunks: list[str] = []
@@ -197,9 +211,30 @@ def modal_sandbox(
             result = _sandbox_result(stdout, stderr, exit_code)
             progress_queue.put(("done", result))
             return result
-        stdout = proc.stdout.read()
-        stderr = proc.stderr.read()
+        # Read streams in background (same as streaming path) so we capture output before process exits
+        _stdout_chunks: list[str] = []
+        _stderr_chunks: list[str] = []
+
+        def _read(stream, chunks: list[str]):
+            try:
+                while True:
+                    data = stream.read(4096)
+                    if not data:
+                        break
+                    s = data.decode() if isinstance(data, bytes) else data
+                    chunks.append(s)
+            except Exception:
+                pass
+
+        _t1 = threading.Thread(target=_read, args=(proc.stdout, _stdout_chunks), daemon=True)
+        _t2 = threading.Thread(target=_read, args=(proc.stderr, _stderr_chunks), daemon=True)
+        _t1.start()
+        _t2.start()
         proc.wait()
+        _t1.join(timeout=5)
+        _t2.join(timeout=5)
+        stdout = "".join(_stdout_chunks)
+        stderr = "".join(_stderr_chunks)
         exit_code = proc.returncode if proc.returncode is not None else -1
         return _sandbox_result(stdout, stderr, exit_code)
     except Exception as e:
