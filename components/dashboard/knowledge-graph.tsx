@@ -84,7 +84,8 @@ export function KnowledgeGraphView({ projectId }: KnowledgeGraphViewProps = {}) 
   const [hoveredNode, setHoveredNode] = useState<GraphNode | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const graphRef = useRef<FGMethods | undefined>(undefined)
-  const [dimensions, setDimensions] = useState({ width: 800, height: 600 })
+  const [dimensions, setDimensions] = useState({ width: 0, height: 0 })
+  const hasAutoFit = useRef(false)
 
   const fetchGraph = useCallback(async () => {
     setLoading(true)
@@ -97,6 +98,7 @@ export function KnowledgeGraphView({ projectId }: KnowledgeGraphViewProps = {}) 
       }
       const data: GraphData = await res.json()
       setGraphData(data)
+      hasAutoFit.current = false
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load graph")
     } finally {
@@ -110,15 +112,28 @@ export function KnowledgeGraphView({ projectId }: KnowledgeGraphViewProps = {}) 
 
   useEffect(() => {
     if (!containerRef.current) return
-    const observer = new ResizeObserver((entries) => {
-      for (const entry of entries) {
-        const { width, height } = entry.contentRect
-        setDimensions({ width: Math.floor(width), height: Math.floor(height) })
-      }
-    })
+    const measure = () => {
+      if (!containerRef.current) return
+      const { width, height } = containerRef.current.getBoundingClientRect()
+      setDimensions({ width: Math.floor(width), height: Math.floor(height) })
+    }
+    measure()
+    const observer = new ResizeObserver(() => measure())
     observer.observe(containerRef.current)
     return () => observer.disconnect()
   }, [])
+
+  // Auto-fit to view once the simulation settles after data loads
+  useEffect(() => {
+    if (!graphData || graphData.nodes.length === 0 || hasAutoFit.current) return
+    const timer = setTimeout(() => {
+      if (graphRef.current) {
+        graphRef.current.zoomToFit(400, 60)
+        hasAutoFit.current = true
+      }
+    }, 1500)
+    return () => clearTimeout(timer)
+  }, [graphData])
 
   const filteredData = useMemo(() => {
     if (!graphData) return { nodes: [], links: [] }
@@ -410,9 +425,9 @@ export function KnowledgeGraphView({ projectId }: KnowledgeGraphViewProps = {}) 
       </div>
 
       {/* Graph + Detail Panel */}
-      <div className="relative flex flex-1 overflow-hidden rounded-md border border-border">
-        <div ref={containerRef} className="flex-1">
-          {dimensions.width > 0 && (
+      <div className="relative flex min-h-0 flex-1 overflow-hidden rounded-md border border-border">
+        <div ref={containerRef} className="relative min-h-0 flex-1">
+          {dimensions.width > 0 && dimensions.height > 0 && (
             <ForceGraph2D
               ref={graphRef as React.MutableRefObject<FGMethods | undefined>}
               width={selectedNode ? dimensions.width * 0.65 : dimensions.width}

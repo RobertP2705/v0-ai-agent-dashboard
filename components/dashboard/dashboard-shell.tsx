@@ -213,7 +213,11 @@ export function DashboardShell() {
                 <div className="w-full lg:w-[340px]"><AgentStatusGrid /></div>
               </div>
             )}
-            {activeView === "knowledge-graph" && <KnowledgeGraphView />}
+            {activeView === "knowledge-graph" && (
+              <div className="h-full min-h-[500px]">
+                <KnowledgeGraphView />
+              </div>
+            )}
             {activeView === "papers" && <PapersView />}
             {activeView === "meeting" && <MeetingRoom />}
 

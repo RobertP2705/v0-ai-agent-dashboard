@@ -11,9 +11,105 @@ import {
   type SupabaseTask,
 } from "@/lib/graph-utils"
 
-const SEMANTIC_SIMILARITY_THRESHOLD = 0.55
-const MAX_MEMORIES_FOR_SEMANTIC = 30
-const MAX_DOCUMENTS = 200
+const SEMANTIC_SIMILARITY_THRESHOLD = 0.45
+const MAX_DOCUMENTS = 500
+const SEMANTIC_BATCH_SIZE = 8
+
+async function computeSemanticEdges(
+  documents: SupamemoryDoc[],
+  containerTag: string,
+  edgeSet: Set<string>,
+): Promise<GraphLink[]> {
+  const edges: GraphLink[] = []
+
+  for (let offset = 0; offset < documents.length; offset += SEMANTIC_BATCH_SIZE) {
+    const batch = documents.slice(offset, offset + SEMANTIC_BATCH_SIZE)
+    const searchResults = await Promise.allSettled(
+      batch.map((doc) => {
+        const query = doc.title || doc.summary || doc.content || "memory"
+        return searchMemoriesWithScore({
+          q: typeof query === "string" ? query : String(query),
+          containerTag,
+          limit: 6,
+        })
+      }),
+    )
+
+    for (let i = 0; i < searchResults.length; i++) {
+      const result = searchResults[i]
+      if (result.status !== "fulfilled") continue
+      const sourceId = `mem-${batch[i].id}`
+      for (const match of result.value) {
+        if (match.similarity < SEMANTIC_SIMILARITY_THRESHOLD) continue
+        const targetId = `mem-${match.id}`
+        if (sourceId === targetId) continue
+        const key = [sourceId, targetId].sort().join("--")
+        if (edgeSet.has(key)) continue
+        edgeSet.add(key)
+        edges.push({
+          source: sourceId,
+          target: targetId,
+          type: "semantic",
+          weight: match.similarity,
+        })
+      }
+    }
+  }
+
+  return edges
+}
+
+async function computeCrossTypeEdges(
+  papers: SupabasePaper[],
+  directions: SupabaseDirection[],
+  containerTag: string,
+  edgeSet: Set<string>,
+): Promise<GraphLink[]> {
+  const edges: GraphLink[] = []
+
+  const queries: { id: string; text: string }[] = []
+  for (const p of papers) {
+    const text = p.title + (p.abstract ? ` — ${p.abstract.slice(0, 200)}` : "")
+    queries.push({ id: `paper-${p.id}`, text })
+  }
+  for (const d of directions) {
+    const text = d.title + (d.rationale ? ` — ${d.rationale.slice(0, 200)}` : "")
+    queries.push({ id: `dir-${d.id}`, text })
+  }
+
+  for (let offset = 0; offset < queries.length; offset += SEMANTIC_BATCH_SIZE) {
+    const batch = queries.slice(offset, offset + SEMANTIC_BATCH_SIZE)
+    const results = await Promise.allSettled(
+      batch.map((item) =>
+        searchMemoriesWithScore({
+          q: item.text.slice(0, 300),
+          containerTag,
+          limit: 3,
+        }),
+      ),
+    )
+    for (let i = 0; i < results.length; i++) {
+      const result = results[i]
+      if (result.status !== "fulfilled") continue
+      const sourceId = batch[i].id
+      for (const match of result.value) {
+        if (match.similarity < SEMANTIC_SIMILARITY_THRESHOLD) continue
+        const targetId = `mem-${match.id}`
+        const key = [sourceId, targetId].sort().join("--")
+        if (edgeSet.has(key)) continue
+        edgeSet.add(key)
+        edges.push({
+          source: sourceId,
+          target: targetId,
+          type: "semantic",
+          weight: match.similarity,
+        })
+      }
+    }
+  }
+
+  return edges
+}
 
 export async function GET() {
   try {
@@ -28,6 +124,7 @@ export async function GET() {
 
     let documents: SupamemoryDoc[] = []
     let semanticEdges: GraphLink[] = []
+    const edgeSet = new Set<string>()
     const supermemoryEnabled = !!process.env.SUPERMEMORY_API_KEY
 
     if (supermemoryEnabled) {
@@ -46,40 +143,8 @@ export async function GET() {
           content: (m as unknown as { content?: string | null }).content ?? undefined,
         }))
 
-        const docsForSemantic = documents.slice(0, MAX_MEMORIES_FOR_SEMANTIC)
-        const edgeSet = new Set<string>()
-
-        const searchResults = await Promise.allSettled(
-          docsForSemantic.map((doc) => {
-            const query =
-              doc.title || doc.summary || doc.content || "memory"
-            return searchMemoriesWithScore({
-              q: typeof query === "string" ? query : String(query),
-              containerTag: user.id,
-              limit: 5,
-            })
-          }),
-        )
-
-        for (let i = 0; i < searchResults.length; i++) {
-          const result = searchResults[i]
-          if (result.status !== "fulfilled") continue
-          const sourceId = `mem-${docsForSemantic[i].id}`
-          for (const match of result.value) {
-            if (match.similarity < SEMANTIC_SIMILARITY_THRESHOLD) continue
-            const targetId = `mem-${match.id}`
-            if (sourceId === targetId) continue
-            const key = [sourceId, targetId].sort().join("--")
-            if (edgeSet.has(key)) continue
-            edgeSet.add(key)
-            semanticEdges.push({
-              source: sourceId,
-              target: targetId,
-              type: "semantic",
-              weight: match.similarity,
-            })
-          }
-        }
+        const memEdges = await computeSemanticEdges(documents, user.id, edgeSet)
+        semanticEdges.push(...memEdges)
       } catch (err) {
         console.warn("[graph] Supermemory fetch failed, continuing with Supabase data only:", err)
       }
@@ -91,31 +156,49 @@ export async function GET() {
           .from("papers")
           .select("id, task_id, title, abstract, summary, created_at")
           .order("created_at", { ascending: false })
-          .limit(200),
+          .limit(500),
         supabase
           .from("experiments")
           .select("id, task_id, paper_id, status, metrics, created_at")
           .order("created_at", { ascending: false })
-          .limit(200),
+          .limit(500),
         supabase
           .from("research_directions")
           .select(
             "id, task_id, title, rationale, feasibility_score, novelty_score, related_papers, created_at",
           )
           .order("created_at", { ascending: false })
-          .limit(200),
+          .limit(500),
         supabase
           .from("tasks")
           .select("id, query, status, created_at")
           .order("created_at", { ascending: false })
-          .limit(100),
+          .limit(1000),
       ])
+
+    const papers = (papersRes.data ?? []) as SupabasePaper[]
+    const directions = (directionsRes.data ?? []) as SupabaseDirection[]
+
+    // Cross-type semantic edges: papers & directions → memories
+    if (supermemoryEnabled && documents.length > 0) {
+      try {
+        const crossEdges = await computeCrossTypeEdges(
+          papers,
+          directions,
+          user.id,
+          edgeSet,
+        )
+        semanticEdges.push(...crossEdges)
+      } catch (err) {
+        console.warn("[graph] Cross-type semantic search failed:", err)
+      }
+    }
 
     const graph = buildGraphData({
       documents,
-      papers: (papersRes.data ?? []) as SupabasePaper[],
+      papers,
       experiments: (experimentsRes.data ?? []) as SupabaseExperiment[],
-      directions: (directionsRes.data ?? []) as SupabaseDirection[],
+      directions,
       tasks: (tasksRes.data ?? []) as SupabaseTask[],
       semanticEdges,
     })

@@ -315,10 +315,19 @@ def _save_direction(task_id: str, answer: str):
         title = answer.split("\n")[0][:200].strip("# ").strip()
         if not title:
             title = "Research direction"
+
+        related_paper_ids: list[str] = []
+        try:
+            task_papers = db.list_papers(task_id=task_id, limit=50)
+            related_paper_ids = [p["id"] for p in task_papers if p.get("id")]
+        except Exception:
+            pass
+
         db.insert_direction(
             task_id=task_id,
             title=title,
             rationale=answer[:2000],
+            related_papers=related_paper_ids,
         )
     except Exception:
         pass
