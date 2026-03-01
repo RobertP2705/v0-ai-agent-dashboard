@@ -43,10 +43,10 @@ const NODE_COLORS: Record<NodeType, string> = {
 }
 
 const EDGE_COLORS: Record<EdgeType, string> = {
-  semantic: "rgba(52,211,153,0.25)",
-  implements: "rgba(251,191,36,0.35)",
-  related: "rgba(248,113,113,0.35)",
-  spawned: "rgba(167,139,250,0.25)",
+  semantic: "rgba(52,211,153,0.15)",
+  implements: "rgba(251,191,36,0.2)",
+  related: "rgba(248,113,113,0.2)",
+  spawned: "rgba(167,139,250,0.15)",
 }
 
 const NODE_ICONS: Record<NodeType, typeof Brain> = {
@@ -103,7 +103,7 @@ export function KnowledgeGraphView({ projectId }: KnowledgeGraphViewProps = {}) 
   const [hoveredNode, setHoveredNode] = useState<GraphNode | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const graphRef = useRef<FGMethods | undefined>(undefined)
-  const [dimensions, setDimensions] = useState({ width: 800, height: 600 })
+  const [dimensions, setDimensions] = useState({ width: 0, height: 0 })
   const hasAutoFit = useRef(false)
   const wrapperRef = useRef<HTMLDivElement>(null)
   const abortRef = useRef<AbortController | null>(null)
@@ -156,29 +156,30 @@ export function KnowledgeGraphView({ projectId }: KnowledgeGraphViewProps = {}) 
     return () => clearInterval(interval)
   }, [loading])
 
-  // Measure the outer wrapper (which has a stable size from flex layout)
-  // rather than the inner container (which could collapse when empty)
+  // Measure the graph wrapper so the canvas matches the card (avoids clipping)
   useEffect(() => {
     const el = wrapperRef.current
     if (!el) return
     const measure = () => {
-      const { width, height } = el.getBoundingClientRect()
-      if (width > 0 && height > 0) {
-        setDimensions({ width: Math.floor(width), height: Math.floor(height) })
+      const rect = el.getBoundingClientRect()
+      const w = Math.floor(rect.width)
+      const h = Math.floor(rect.height)
+      if (w > 0 && h > 0) {
+        setDimensions((prev) => (prev.width === w && prev.height === h ? prev : { width: w, height: h }))
       }
     }
     measure()
-    const observer = new ResizeObserver(() => measure())
+    const observer = new ResizeObserver(measure)
     observer.observe(el)
     return () => observer.disconnect()
   }, [])
 
-  // Auto-fit to view once the simulation settles after data loads
+  // Auto-fit to view once the simulation settles so the whole graph is visible
   useEffect(() => {
     if (!graphData || graphData.nodes.length === 0 || hasAutoFit.current) return
     const timer = setTimeout(() => {
       if (graphRef.current) {
-        graphRef.current.zoomToFit(400, 60)
+        graphRef.current.zoomToFit(500, 80)
         hasAutoFit.current = true
       }
     }, 1500)
@@ -269,26 +270,29 @@ export function KnowledgeGraphView({ projectId }: KnowledgeGraphViewProps = {}) 
 
   const handleFitView = () => {
     if (graphRef.current) {
-      graphRef.current.zoomToFit(400, 40)
+      graphRef.current.zoomToFit(500, 80)
     }
   }
 
+  // Labels only when zoomed in or node is selected/hovered — reduces overlap and clutter
+  const LABEL_VISIBLE_SCALE = 2.5
   const nodeCanvasObject = useCallback(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (node: any, ctx: CanvasRenderingContext2D, globalScale: number) => {
       const gn = node as GraphNode & { x: number; y: number }
       const degree = degreeMap.get(gn.id) ?? 0
-      const baseSize = 4
-      const size = baseSize + Math.min(degree * 1.2, 12)
+      const baseSize = 3
+      const size = baseSize + Math.min(degree * 0.8, 8)
       const isSelected = selectedNode?.id === gn.id
       const isHovered = hoveredNode?.id === gn.id
       const isSearchMatch =
         searchQuery && gn.label.toLowerCase().includes(searchQuery.toLowerCase())
+      const showLabel = globalScale > LABEL_VISIBLE_SCALE || isSelected || isHovered || isSearchMatch
 
       ctx.beginPath()
       ctx.arc(gn.x, gn.y, size, 0, 2 * Math.PI)
       ctx.fillStyle = NODE_COLORS[gn.type] || "#888"
-      ctx.globalAlpha = isSelected || isHovered || isSearchMatch ? 1 : 0.75
+      ctx.globalAlpha = isSelected || isHovered || isSearchMatch ? 1 : 0.8
       ctx.fill()
 
       if (isSelected || isHovered) {
@@ -304,13 +308,13 @@ export function KnowledgeGraphView({ projectId }: KnowledgeGraphViewProps = {}) 
 
       ctx.globalAlpha = 1
 
-      if (globalScale > 1.8 || isSelected || isHovered) {
+      if (showLabel) {
         const label = gn.label
-        const fontSize = Math.max(10 / globalScale, 2)
+        const fontSize = Math.max(11 / globalScale, 2)
         ctx.font = `${fontSize}px sans-serif`
         ctx.textAlign = "center"
         ctx.textBaseline = "top"
-        ctx.fillStyle = "rgba(255,255,255,0.9)"
+        ctx.fillStyle = "rgba(255,255,255,0.95)"
         ctx.fillText(label, gn.x, gn.y + size + 2)
       }
     },
@@ -322,7 +326,7 @@ export function KnowledgeGraphView({ projectId }: KnowledgeGraphViewProps = {}) 
     (node: any, color: string, ctx: CanvasRenderingContext2D) => {
       const gn = node as GraphNode & { x: number; y: number }
       const degree = degreeMap.get(gn.id) ?? 0
-      const size = 4 + Math.min(degree * 1.2, 12) + 2
+      const size = 3 + Math.min(degree * 0.8, 8) + 2
       ctx.beginPath()
       ctx.arc(gn.x, gn.y, size, 0, 2 * Math.PI)
       ctx.fillStyle = color
@@ -474,12 +478,15 @@ export function KnowledgeGraphView({ projectId }: KnowledgeGraphViewProps = {}) 
       </div>
 
       {/* Stats bar */}
-      <div className="flex items-center gap-4 px-1">
+      <div className="flex flex-wrap items-center gap-4 px-1">
         <span className="font-mono text-[10px] text-muted-foreground">
           {filteredData.nodes.length} nodes
         </span>
         <span className="font-mono text-[10px] text-muted-foreground">
           {filteredData.links.length} connections
+        </span>
+        <span className="text-[10px] text-muted-foreground/80">
+          Zoom in or hover to see labels
         </span>
         {searchQuery && (
           <button
@@ -491,10 +498,13 @@ export function KnowledgeGraphView({ projectId }: KnowledgeGraphViewProps = {}) 
         )}
       </div>
 
-      {/* Graph + Detail Panel */}
-      <div ref={wrapperRef} className="relative flex min-h-0 flex-1 overflow-hidden rounded-md border border-border">
-        <div ref={containerRef} className="absolute inset-0">
-          {dimensions.width > 0 && (
+      {/* Graph + Detail Panel: min-h ensures the wrapper gets a real size so the graph doesn't clip */}
+      <div
+        ref={wrapperRef}
+        className="relative flex min-h-[420px] min-w-0 flex-1 overflow-hidden rounded-lg border border-border bg-muted/20"
+      >
+        <div ref={containerRef} className="absolute inset-0 size-full">
+          {dimensions.width > 0 && dimensions.height > 0 && (
             <ForceGraph2D
               ref={graphRef as React.MutableRefObject<FGMethods | undefined>}
               width={selectedNode ? dimensions.width * 0.65 : dimensions.width}
@@ -506,14 +516,12 @@ export function KnowledgeGraphView({ projectId }: KnowledgeGraphViewProps = {}) 
               onNodeClick={(node) => handleNodeClick(node as GraphNode)}
               onNodeHover={(node) => setHoveredNode((node as GraphNode) || null)}
               onBackgroundClick={() => setSelectedNode(null)}
-              linkColor={(link: unknown) => EDGE_COLORS[(link as GraphLink).type] || "rgba(255,255,255,0.1)"}
+              linkColor={(link: unknown) => EDGE_COLORS[(link as GraphLink).type] || "rgba(255,255,255,0.08)"}
               linkWidth={(link: unknown) => {
                 const gl = link as GraphLink
-                return gl.type === "semantic" ? (gl.weight ?? 0.5) * 2 : 1
+                return gl.type === "semantic" ? Math.min((gl.weight ?? 0.5) * 1.2, 1.2) : 0.8
               }}
-              linkDirectionalParticles={2}
-              linkDirectionalParticleWidth={1.5}
-              linkDirectionalParticleSpeed={0.004}
+              linkDirectionalParticles={0}
               cooldownTicks={150}
               d3AlphaDecay={0.02}
               d3VelocityDecay={0.3}
@@ -526,26 +534,26 @@ export function KnowledgeGraphView({ projectId }: KnowledgeGraphViewProps = {}) 
 
         {/* Detail Panel */}
         {selectedNode && (
-          <div className="absolute right-0 top-0 z-10 h-full w-[35%] min-w-[240px] max-w-[360px] border-l border-border bg-card/95 backdrop-blur-sm">
-            <div className="flex items-center justify-between border-b border-border px-3 py-2">
-              <div className="flex items-center gap-2">
+          <div className="absolute right-0 top-0 z-10 flex h-full w-[35%] min-w-[240px] max-w-[360px] flex-col border-l border-border bg-card/95 shadow-lg backdrop-blur-sm">
+            <div className="flex shrink-0 items-center justify-between border-b border-border px-3 py-2">
+              <div className="flex min-w-0 items-center gap-2">
                 {(() => {
                   const Icon = NODE_ICONS[selectedNode.type]
-                  return <Icon className="h-4 w-4" style={{ color: NODE_COLORS[selectedNode.type] }} />
+                  return <Icon className="h-4 w-4 shrink-0" style={{ color: NODE_COLORS[selectedNode.type] }} />
                 })()}
-                <span className="text-xs font-semibold text-foreground">Node Details</span>
+                <span className="truncate text-xs font-semibold text-foreground">Node Details</span>
               </div>
               <button
                 onClick={() => setSelectedNode(null)}
-                className="rounded-md p-0.5 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+                className="shrink-0 rounded-md p-0.5 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
               >
                 <X className="h-3.5 w-3.5" />
               </button>
             </div>
 
-            <ScrollArea className="h-[calc(100%-40px)]">
+            <ScrollArea className="min-h-0 flex-1">
               <div className="flex flex-col gap-3 p-3">
-                <div>
+                <div className="min-w-0">
                   <Badge
                     variant="outline"
                     className="mb-1.5 text-[10px]"
@@ -556,7 +564,7 @@ export function KnowledgeGraphView({ projectId }: KnowledgeGraphViewProps = {}) 
                   >
                     {selectedNode.type}
                   </Badge>
-                  <h3 className="text-sm font-semibold text-foreground leading-snug">
+                  <h3 className="line-clamp-2 break-words text-sm font-semibold text-foreground leading-snug">
                     {selectedNode.label}
                   </h3>
                   {selectedNode.createdAt && (
@@ -567,11 +575,11 @@ export function KnowledgeGraphView({ projectId }: KnowledgeGraphViewProps = {}) 
                 </div>
 
                 {selectedNode.content && (
-                  <div>
+                  <div className="min-w-0">
                     <p className="mb-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
                       Content
                     </p>
-                    <p className="whitespace-pre-wrap text-xs leading-relaxed text-foreground/80">
+                    <p className="line-clamp-6 break-words whitespace-pre-wrap text-xs leading-relaxed text-foreground/80">
                       {selectedNode.content.length > 800
                         ? selectedNode.content.slice(0, 800) + "..."
                         : selectedNode.content}
@@ -580,17 +588,17 @@ export function KnowledgeGraphView({ projectId }: KnowledgeGraphViewProps = {}) 
                 )}
 
                 {selectedNode.metadata && Object.keys(selectedNode.metadata).length > 0 && (
-                  <div>
+                  <div className="min-w-0">
                     <p className="mb-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
                       Metadata
                     </p>
                     <div className="space-y-0.5">
                       {Object.entries(selectedNode.metadata).map(([key, val]) => (
-                        <div key={key} className="flex items-center gap-2">
-                          <span className="font-mono text-[10px] text-muted-foreground">
+                        <div key={key} className="flex min-w-0 items-center gap-2">
+                          <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
                             {key}:
                           </span>
-                          <span className="font-mono text-[10px] text-foreground/80">
+                          <span className="min-w-0 truncate font-mono text-[10px] text-foreground/80">
                             {String(val)}
                           </span>
                         </div>
@@ -600,7 +608,7 @@ export function KnowledgeGraphView({ projectId }: KnowledgeGraphViewProps = {}) 
                 )}
 
                 {connectedNodes.length > 0 && (
-                  <div>
+                  <div className="min-w-0">
                     <p className="mb-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
                       Connected ({connectedNodes.length})
                     </p>
@@ -611,13 +619,13 @@ export function KnowledgeGraphView({ projectId }: KnowledgeGraphViewProps = {}) 
                           <button
                             key={cn.id}
                             onClick={() => handleNodeClick(cn)}
-                            className="flex w-full items-center gap-2 rounded-md px-2 py-1 text-left transition-colors hover:bg-secondary/50"
+                            className="flex w-full min-w-0 items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-secondary/50"
                           >
                             <Icon
                               className="h-3 w-3 shrink-0"
                               style={{ color: NODE_COLORS[cn.type] }}
                             />
-                            <span className="truncate text-[11px] text-foreground/80">
+                            <span className="min-w-0 truncate text-[11px] text-foreground/80">
                               {cn.label}
                             </span>
                           </button>

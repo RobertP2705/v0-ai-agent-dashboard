@@ -11,9 +11,9 @@ import {
   type SupabaseTask,
 } from "@/lib/graph-utils"
 
-// Stricter threshold and caps so the graph stays readable (fewer, stronger edges)
-const SEMANTIC_SIMILARITY_THRESHOLD = 0.52
-const MAX_SEMANTIC_EDGES_PER_NODE = 4
+// Fewer, stronger edges for a readable graph
+const SEMANTIC_SIMILARITY_THRESHOLD = 0.55
+const MAX_SEMANTIC_EDGES_PER_NODE = 3
 const MAX_DOCUMENTS = 500
 const SEMANTIC_BATCH_SIZE = 8
 const SUPERMEMORY_CALL_TIMEOUT_MS = 8_000

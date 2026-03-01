@@ -106,9 +106,9 @@ export function ProjectDetailView({
 
   if (activeSubView === "graph") {
     return (
-      <div className="flex h-full min-h-[500px] flex-col gap-4">
+      <div className="flex h-full min-h-[500px] flex-col gap-3">
         <ProjectHeader project={project} />
-        <div className="min-h-0 flex-1">
+        <div className="min-h-0 flex-1 overflow-hidden">
           <KnowledgeGraphView projectId={project.id} />
         </div>
       </div>
