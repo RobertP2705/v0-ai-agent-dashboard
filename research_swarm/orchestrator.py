@@ -92,9 +92,9 @@ def run_research(
         "assigned_agents": all_agent_ids,
     })
 
-    # Phase 1: collectors (paper-collector, research-director). Phase 2: implementer runs after with their results.
+    # Phase 1: collectors (paper-collector, research-director). Phase 2: implementer and pdf-agent run after with their results.
     PHASE1_AGENTS = {"paper-collector", "research-director"}
-    PHASE2_AGENTS = {"implementer"}
+    PHASE2_AGENTS = {"implementer", "pdf-agent"}
     phase1_roster = [(aid, label, st) for aid, label, st in roster if aid in PHASE1_AGENTS]
     phase2_roster = [(aid, label, st) for aid, label, st in roster if aid in PHASE2_AGENTS]
 
@@ -162,27 +162,40 @@ def run_research(
         parts = [f"## {label}\n{result.answer}" for label, result in agent_results.items()]
         collector_summary = "\n\n".join(parts)
 
-    # ── Phase 2: Implementer with research context; must use modal_sandbox ──
+    # ── Phase 2: Implementer and PDF agent with research context ──
     if phase2_roster:
         impl_instruction = (
             "Use the research context below. Do NOT call fetch_url or web_search first — "
             "repo URLs and info are already in the context. "
             "Your first step MUST be modal_sandbox: git clone the repo(s) mentioned above (if they exist) (use the EXACT URL(s) from the context — never placeholder URLs like https://github.com/username/repo.git), install deps, and run the code. Use subprocess.run for git clone with capture_output=True and GIT_TERMINAL_PROMPT=0; do not use os.system() for git."
         )
+        pdf_instruction = (
+            "Use the research context below to produce a short PDF report. Do NOT call web_search or fetch_url first — use the context. "
+            "Structure: title, abstract (1–3 sentences), 1–3 short sections. If a chart or figure would help, use modal_sandbox with matplotlib to generate it, then call create_report_pdf with title, abstract, sections, and optional figures. "
+            "Keep the report concise (1–2 pages). Include the download URL in your final answer."
+        )
         if collector_summary:
-            impl_instruction = (
+            context_block = (
                 "## Research from Paper Collector / Research Director (use this; do not re-fetch):\n\n"
                 + collector_summary[:12000]
                 + "\n\n---\n\n"
-                + impl_instruction
             )
+            impl_instruction = context_block + impl_instruction
+            pdf_instruction = context_block + pdf_instruction + f"\n\nUser request: {query[:500]}"
         else:
             impl_instruction = impl_instruction + f"\n\nUser request: {query[:500]}"
+            pdf_instruction = pdf_instruction + f"\n\nUser request: {query[:500]}"
 
-        # Give implementer the context-aware task
+        def _phase2_task(agent_id: str, label: str) -> str:
+            if agent_id == "implementer":
+                return impl_instruction
+            if agent_id == "pdf-agent":
+                return pdf_instruction
+            return query
+
         phase2_with_task = []
         for agent_id, label, _ in phase2_roster:
-            phase2_with_task.append((agent_id, label, impl_instruction if agent_id == "implementer" else query))
+            phase2_with_task.append((agent_id, label, _phase2_task(agent_id, label)))
 
         labels2 = [label for _, label, _ in phase2_with_task]
         yield _event(task_id, "system", "action", f"Phase 2 — Implementation: {', '.join(labels2)} (using research above)")

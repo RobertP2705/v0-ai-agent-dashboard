@@ -3,7 +3,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { BookOpen, Terminal, Compass, Trash2, Users } from "lucide-react"
+import { BookOpen, Terminal, Compass, FileText, Trash2, Users } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { Team } from "@/lib/supabase"
 
@@ -11,12 +11,14 @@ const agentIcons: Record<string, { icon: React.ElementType; color: string }> = {
   "paper-collector": { icon: BookOpen, color: "text-chart-1" },
   implementer: { icon: Terminal, color: "text-chart-2" },
   "research-director": { icon: Compass, color: "text-chart-3" },
+  "pdf-agent": { icon: FileText, color: "text-chart-4" },
 }
 
 const agentLabels: Record<string, string> = {
   "paper-collector": "Paper Collector",
   implementer: "Implementer",
   "research-director": "Research Director",
+  "pdf-agent": "PDF Report Writer",
 }
 
 /** Short snippet: "Paper Collector (2), Implementer (1), Research Director (1)" for enabled agents. */

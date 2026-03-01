@@ -21,6 +21,7 @@ import {
   BookOpen,
   Terminal,
   Compass,
+  FileText,
   Sparkles,
   Loader2,
   Info,
@@ -42,6 +43,8 @@ const agentIconMap: Record<string, React.ElementType> = {
   implementer: Terminal,
   "Research Director": Compass,
   "research-director": Compass,
+  "PDF Report Writer": FileText,
+  "pdf-agent": FileText,
 }
 
 function getAgentIcon(agent: string): React.ElementType {
@@ -59,6 +62,8 @@ function getAgentBgColor(agent: string): string {
     implementer: "bg-chart-2/15 border-chart-2/30",
     "Research Director": "bg-chart-3/15 border-chart-3/30",
     "research-director": "bg-chart-3/15 border-chart-3/30",
+    "PDF Report Writer": "bg-chart-4/15 border-chart-4/30",
+    "pdf-agent": "bg-chart-4/15 border-chart-4/30",
   }
   const base = agent.replace(/ #\d+$/, "")
   return colors[base] ?? "bg-muted border-border"

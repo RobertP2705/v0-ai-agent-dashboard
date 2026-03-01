@@ -77,6 +77,16 @@ export interface ResearchDirection {
   created_at: string
 }
 
+export interface TaskReport {
+  id: string
+  task_id: string | null
+  title: string
+  file_name: string
+  storage_path: string
+  public_url: string
+  created_at: string
+}
+
 // ── Team CRUD (direct Supabase from client) ─────────────────────────────
 
 export async function fetchTeams(): Promise<Team[]> {
@@ -553,6 +563,27 @@ export async function fetchPapersForProject(
     .range(from, to)
   if (error) throw error
   return { data: data ?? [], total: count ?? 0 }
+}
+
+export async function fetchReportsForProject(
+  projectId: string,
+  limit = 50,
+): Promise<TaskReport[]> {
+  const supabase = getSupabase()
+  const { data: taskRows } = await supabase
+    .from("tasks")
+    .select("id")
+    .eq("project_id", projectId)
+  const taskIds = (taskRows ?? []).map((t) => t.id)
+  if (taskIds.length === 0) return []
+  const { data, error } = await supabase
+    .from("task_reports")
+    .select("*")
+    .in("task_id", taskIds)
+    .order("created_at", { ascending: false })
+    .limit(limit)
+  if (error) throw error
+  return data ?? []
 }
 
 export async function fetchEventsForProject(projectId: string, limit = 200): Promise<TaskEventRow[]> {

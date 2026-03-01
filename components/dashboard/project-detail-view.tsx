@@ -12,6 +12,7 @@ import { ApiMonitor } from "@/components/dashboard/api-monitor"
 import { ChatInterface } from "@/components/dashboard/chat-interface"
 import { MeetingRoom } from "@/components/dashboard/meeting-room"
 import { PapersView } from "@/components/dashboard/papers-view"
+import { ReportsView } from "@/components/dashboard/reports-view"
 import { KnowledgeGraphView } from "@/components/dashboard/knowledge-graph"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -100,6 +101,15 @@ export function ProjectDetailView({
       <div className="flex h-full flex-col gap-4">
         <ProjectHeader project={project} />
         <PapersView />
+      </div>
+    )
+  }
+
+  if (activeSubView === "reports") {
+    return (
+      <div className="flex h-full flex-col gap-4">
+        <ProjectHeader project={project} />
+        <ReportsView projectId={projectId} />
       </div>
     )
   }

@@ -5,6 +5,8 @@ export const AGENT_VOICES: Record<string, { voiceId: string; label: string }> = 
   implementer: { voiceId: "EXAVITQu4vr4xnSDxMaL", label: "Bella" },
   "Research Director": { voiceId: "ErXwobaYiN019PkySvjV", label: "Antoni" },
   "research-director": { voiceId: "ErXwobaYiN019PkySvjV", label: "Antoni" },
+  "PDF Report Writer": { voiceId: "VR6AewLTigWG4xSOukaG", label: "Arnold" },
+  "pdf-agent": { voiceId: "VR6AewLTigWG4xSOukaG", label: "Arnold" },
   system: { voiceId: "VR6AewLTigWG4xSOukaG", label: "Arnold" },
 }
 

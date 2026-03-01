@@ -234,3 +234,28 @@ def list_directions(task_id: str | None = None, limit: int = 50) -> list[dict]:
     if task_id:
         q = q.eq("task_id", task_id)
     return q.execute().data
+
+
+# ── Task reports (PDF agent output) ────────────────────────────────────────
+
+def insert_task_report(task_id: str, title: str, file_name: str,
+                      storage_path: str, public_url: str) -> dict | None:
+    try:
+        sb = _get_client()
+        res = sb.table("task_reports").insert({
+            "task_id": task_id,
+            "title": title,
+            "file_name": file_name,
+            "storage_path": storage_path,
+            "public_url": public_url,
+        }).execute()
+        return _first_or_none(res)
+    except Exception:
+        return None
+
+def list_task_reports(task_id: str | None = None, limit: int = 50) -> list[dict]:
+    sb = _get_client()
+    q = sb.table("task_reports").select("*").order("created_at", desc=True).limit(limit)
+    if task_id:
+        q = q.eq("task_id", task_id)
+    return q.execute().data

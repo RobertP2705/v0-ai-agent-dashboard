@@ -19,6 +19,7 @@ import {
   Network,
   FolderOpen,
   HelpCircle,
+  FileText,
 } from "lucide-react"
 import type { User } from "@supabase/supabase-js"
 import {
@@ -37,6 +38,7 @@ const projectSubNav = [
   { id: "project-research", label: "Research", icon: Activity },
   { id: "project-graph", label: "Knowledge Graph", icon: Network },
   { id: "project-papers", label: "Papers Library", icon: BookOpen },
+  { id: "project-reports", label: "Reports", icon: FileText },
   { id: "project-meeting", label: "Meeting Room", icon: MessageSquare },
 ]
 

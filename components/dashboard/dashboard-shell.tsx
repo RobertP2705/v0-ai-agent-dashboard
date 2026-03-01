@@ -39,6 +39,10 @@ const viewMeta: Record<string, { title: string; description: string }> = {
     title: "Papers Library",
     description: "Browse and search collected research papers",
   },
+  "project-reports": {
+    title: "Generated Reports",
+    description: "Download PDF reports produced by the PDF Report Writer agent",
+  },
   "project-meeting": {
     title: "Research Meeting Room",
     description: "Multi-agent discussion with voice synthesis",

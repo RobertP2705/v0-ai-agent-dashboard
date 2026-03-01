@@ -86,8 +86,11 @@ class BaseAgent:
         entry = TOOL_REGISTRY.get(name)
         if not entry:
             return json.dumps({"error": f"Unknown tool: {name}"})
+        kwargs = dict(arguments)
+        if name == "create_report_pdf" and self.task_id:
+            kwargs["task_id"] = self.task_id
         try:
-            result = entry["fn"](**arguments)
+            result = entry["fn"](**kwargs)
             self._persist_tool_results(name, result)
             return json.dumps(result, default=str)
         except Exception as exc:

@@ -22,6 +22,7 @@ import {
   Terminal,
   Compass,
   Users,
+  FileText,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import {
@@ -55,6 +56,13 @@ const AGENT_TYPES = [
     description: "Identifies promising research directions, gap analysis, novelty assessment.",
     icon: Compass,
     color: "text-chart-3",
+  },
+  {
+    id: "pdf-agent",
+    name: "PDF Report Writer",
+    description: "Produces short research-paper-style PDF reports for download; can add graphs.",
+    icon: FileText,
+    color: "text-chart-4",
   },
 ] as const
 

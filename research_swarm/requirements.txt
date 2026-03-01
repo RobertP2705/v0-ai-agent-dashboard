@@ -10,3 +10,4 @@ sse-starlette>=2.2
 supabase>=2.11
 wandb>=0.19
 PyGithub>=2.5
+reportlab>=4.2

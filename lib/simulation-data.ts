@@ -24,6 +24,8 @@ export function getAgentColor(agent: string): string {
     implementer: "text-chart-2",
     "Research Director": "text-chart-3",
     "research-director": "text-chart-3",
+    "PDF Report Writer": "text-chart-4",
+    "pdf-agent": "text-chart-4",
     system: "text-muted-foreground",
     User: "text-primary",
   }

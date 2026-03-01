@@ -15,6 +15,7 @@ const agentIcons: Record<string, React.ElementType> = {
   "paper-collector": BookOpen,
   implementer: Terminal,
   "research-director": Compass,
+  "pdf-agent": FileText,
 }
 
 function StatusDot({ status }: { status: AgentStatus }) {

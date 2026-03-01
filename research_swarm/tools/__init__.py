@@ -5,6 +5,7 @@ from .fetch_url import fetch_url, TOOL_SCHEMA as FETCH_URL_SCHEMA
 from .modal_sandbox import modal_sandbox, TOOL_SCHEMA as MODAL_SANDBOX_SCHEMA
 from .wandb_log import wandb_log, TOOL_SCHEMA as WANDB_LOG_SCHEMA
 from .github_repo import github_push, TOOL_SCHEMA as GITHUB_PUSH_SCHEMA
+from .report_pdf import create_report_pdf, TOOL_SCHEMA as REPORT_PDF_SCHEMA
 
 TOOL_REGISTRY: dict[str, dict] = {
     "web_search": {"fn": web_search, "schema": WEB_SEARCH_SCHEMA},
@@ -14,4 +15,5 @@ TOOL_REGISTRY: dict[str, dict] = {
     "modal_sandbox": {"fn": modal_sandbox, "schema": MODAL_SANDBOX_SCHEMA},
     "wandb_log": {"fn": wandb_log, "schema": WANDB_LOG_SCHEMA},
     "github_push": {"fn": github_push, "schema": GITHUB_PUSH_SCHEMA},
+    "create_report_pdf": {"fn": create_report_pdf, "schema": REPORT_PDF_SCHEMA},
 }

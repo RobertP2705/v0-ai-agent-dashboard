@@ -36,6 +36,7 @@ import {
   Trash2,
   BookOpen,
   Compass,
+  FileText,
   Users,
 } from "lucide-react"
 import { SupermemoryIcon } from "@/components/ui/supermemory-icon"
@@ -753,6 +754,7 @@ const agentDefs: { id: string; label: string; icon: React.ElementType }[] = [
   { id: "paper-collector", label: "Paper Collector", icon: BookOpen },
   { id: "implementer", label: "Implementer", icon: Terminal },
   { id: "research-director", label: "Research Director", icon: Compass },
+  { id: "pdf-agent", label: "PDF Report Writer", icon: FileText },
 ]
 
 function AgentStatusBar() {
