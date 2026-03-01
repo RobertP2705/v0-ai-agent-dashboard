@@ -757,6 +757,14 @@ const agentDefs: { id: string; label: string; icon: React.ElementType }[] = [
   { id: "pdf-agent", label: "PDF Report Writer", icon: FileText },
 ]
 
+/** Map backend event agent name to status-bar agent id (e.g. "PDF Report Writer" -> "pdf-agent"). */
+function agentNameToId(agentName: string): string {
+  const base = agentName.replace(/ #\d+$/, "").trim()
+  const byLabel = agentDefs.find((a) => a.label === base)?.id
+  if (byLabel) return byLabel
+  return base.toLowerCase().replace(/\s+/g, "-")
+}
+
 function AgentStatusBar() {
   const { isStreaming, activeAgents } = useStreaming()
   return (
@@ -1016,7 +1024,7 @@ export function ChatInterface({ fullscreen = false, projectId, teamId }: ChatInt
         return
       }
       if (event.agent && event.agent !== "system" && event.agent !== "User") {
-        const id = event.agent.replace(/ #\d+$/, "").toLowerCase().replace(/\s+/g, "-")
+        const id = agentNameToId(event.agent)
         if (!activeAgentsRef.current.has(id)) {
           activeAgentsRef.current.add(id)
           setStreamingState({ isStreaming: true, activeAgents: [...activeAgentsRef.current] })

@@ -144,6 +144,12 @@ def run_research(
         db.update_task(task_id, {"status": "running", "assigned_agents": all_agent_ids})
         phase1_roster = [(aid, label, st) for aid, label, st in roster if aid in PHASE1_AGENTS]
         phase2_roster = [(aid, label, st) for aid, label, st in roster if aid in PHASE2_AGENTS]
+        # Require PDF agent in Phase 2 when the team has it (so reports are always produced)
+        if agent_counts.get("pdf-agent", 0) > 0 and not any(aid == "pdf-agent" for aid, _, _ in phase2_roster):
+            base_name = AGENT_DEFINITIONS["pdf-agent"]["name"]
+            for i in range(agent_counts["pdf-agent"]):
+                label = f"{base_name} #{i + 1}" if agent_counts["pdf-agent"] > 1 else base_name
+                phase2_roster.append(("pdf-agent", label, query))
 
     def _run_agent(agent_id: str, label: str, sub_task: str):
         agent_cls = AGENT_CLASSES.get(agent_id)
@@ -256,24 +262,28 @@ def run_research(
         for agent_id, label, _ in phase2_roster:
             phase2_with_task.append((agent_id, label, _phase2_task(agent_id, label)))
 
+        # Run implementer(s) first, then PDF agent(s) so the report is produced at the end
+        phase2_impl = [(a, l, t) for a, l, t in phase2_with_task if a == "implementer"]
+        phase2_pdf = [(a, l, t) for a, l, t in phase2_with_task if a == "pdf-agent"]
+        phase2_other = [(a, l, t) for a, l, t in phase2_with_task if a not in ("implementer", "pdf-agent")]
+        phase2_ordered = phase2_impl + phase2_other + phase2_pdf
+
         labels2 = [label for _, label, _ in phase2_with_task]
         yield _event(task_id, "system", "action", f"Phase 2 — Implementation: {', '.join(labels2)} (using research above)")
-        threads = []
-        for agent_id, label, sub_task in phase2_with_task:
+        for agent_id, label, sub_task in phase2_ordered:
             t = threading.Thread(target=_run_agent, args=(agent_id, label, sub_task), daemon=True)
-            threads.append(t)
             t.start()
-        while any(t.is_alive() for t in threads) or not event_q.empty():
-            try:
-                ev = event_q.get(timeout=0.15)
-                yield ev
-                if ev.get("type") == "error" and "Cancelled by user" in ev.get("message", ""):
-                    db.update_task(task_id, {"status": "cancelled"})
-                    while not event_q.empty():
-                        yield event_q.get()
-                    return db.get_task(task_id) or {}
-            except queue.Empty:
-                continue
+            while t.is_alive() or not event_q.empty():
+                try:
+                    ev = event_q.get(timeout=0.15)
+                    yield ev
+                    if ev.get("type") == "error" and "Cancelled by user" in ev.get("message", ""):
+                        db.update_task(task_id, {"status": "cancelled"})
+                        while not event_q.empty():
+                            yield event_q.get()
+                        return db.get_task(task_id) or {}
+                except queue.Empty:
+                    continue
         while not event_q.empty():
             yield event_q.get()
 
