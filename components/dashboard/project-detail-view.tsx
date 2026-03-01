@@ -109,7 +109,7 @@ export function ProjectDetailView({
     return (
       <div className="flex h-full flex-col gap-4">
         <ProjectHeader project={project} />
-        <ReportsView projectId={projectId} />
+        <ReportsView projectId={projectId} teamId={project.team_id ?? undefined} />
       </div>
     )
   }

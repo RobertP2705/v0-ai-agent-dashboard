@@ -58,9 +58,10 @@ function ReportCard({ report }: { report: TaskReport }) {
 
 interface ReportsViewProps {
   projectId: string
+  teamId?: string
 }
 
-export function ReportsView({ projectId }: ReportsViewProps) {
+export function ReportsView({ projectId, teamId }: ReportsViewProps) {
   const [reports, setReports] = useState<TaskReport[]>([])
   const [loading, setLoading] = useState(true)
   const [testLoading, setTestLoading] = useState(false)
@@ -85,7 +86,7 @@ export function ReportsView({ projectId }: ReportsViewProps) {
       const res = await fetch("/api/swarm/test-report-pdf", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ project_id: projectId || null }),
+        body: JSON.stringify({ project_id: projectId || null, team_id: teamId || null }),
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) {
@@ -107,7 +108,7 @@ export function ReportsView({ projectId }: ReportsViewProps) {
     } finally {
       setTestLoading(false)
     }
-  }, [projectId, loadReports])
+  }, [projectId, teamId, loadReports])
 
   useEffect(() => {
     if (!supabaseConfigured || !projectId) {

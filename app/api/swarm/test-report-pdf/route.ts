@@ -7,10 +7,15 @@ export async function POST(req: NextRequest) {
     const body = await req.json().catch(() => ({}))
     const projectId =
       typeof body.project_id === "string" ? body.project_id : undefined
+    const teamId =
+      typeof body.team_id === "string" ? body.team_id : undefined
     const res = await fetch(`${MODAL_URL}/research/test-report-pdf`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ project_id: projectId ?? null }),
+      body: JSON.stringify({
+        project_id: projectId ?? null,
+        team_id: teamId ?? null,
+      }),
     })
     const data = await res.json().catch(() => ({}))
     if (!res.ok) {

@@ -68,8 +68,9 @@ class AgentToggle(BaseModel):
 
 
 class TestReportPdfRequest(BaseModel):
-    """Optional project_id so the test report appears in that project's list."""
+    """Optional project_id so the test report appears in that project's list; team_id so the task is visible under RLS."""
     project_id: str | None = None
+    team_id: str | None = None
 
 
 # ── Agent definitions ──────────────────────────────────────────────────────
@@ -330,7 +331,7 @@ async def test_report_pdf(req: TestReportPdfRequest) -> dict:
 
     task_row = db.create_task(
         query="Test PDF report",
-        team_id=None,
+        team_id=req.team_id,
         project_id=req.project_id,
     )
     task_id = task_row["id"]
