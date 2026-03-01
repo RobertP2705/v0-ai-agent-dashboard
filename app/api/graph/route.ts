@@ -151,34 +151,58 @@ export async function GET() {
       }
     }
 
-    const [papersRes, experimentsRes, directionsRes, tasksRes] =
-      await Promise.all([
-        supabase
-          .from("papers")
-          .select("id, task_id, title, abstract, summary, created_at")
-          .order("created_at", { ascending: false })
-          .limit(500),
-        supabase
-          .from("experiments")
-          .select("id, task_id, paper_id, status, metrics, created_at")
-          .order("created_at", { ascending: false })
-          .limit(500),
-        supabase
-          .from("research_directions")
-          .select(
-            "id, task_id, title, rationale, feasibility_score, novelty_score, related_papers, created_at",
-          )
-          .order("created_at", { ascending: false })
-          .limit(500),
-        supabase
-          .from("tasks")
-          .select("id, query, status, created_at")
-          .order("created_at", { ascending: false })
-          .limit(1000),
-      ])
+    // Scope all Supabase data to the current user via the ownership chain:
+    // user → teams (user_id) → tasks (team_id) → papers/experiments/directions (task_id)
+    const teamsRes = await supabase
+      .from("teams")
+      .select("id")
+      .eq("user_id", user.id)
+    const teamIds = (teamsRes.data ?? []).map((t: { id: string }) => t.id)
 
-    const papers = (papersRes.data ?? []) as SupabasePaper[]
-    const directions = (directionsRes.data ?? []) as SupabaseDirection[]
+    let tasks: SupabaseTask[] = []
+    let papers: SupabasePaper[] = []
+    let experiments: SupabaseExperiment[] = []
+    let directions: SupabaseDirection[] = []
+
+    if (teamIds.length > 0) {
+      const tasksRes = await supabase
+        .from("tasks")
+        .select("id, query, status, created_at")
+        .in("team_id", teamIds)
+        .order("created_at", { ascending: false })
+        .limit(1000)
+      tasks = (tasksRes.data ?? []) as SupabaseTask[]
+
+      const taskIds = tasks.map((t) => t.id)
+
+      if (taskIds.length > 0) {
+        const [papersRes, experimentsRes, directionsRes] = await Promise.all([
+          supabase
+            .from("papers")
+            .select("id, task_id, title, abstract, summary, created_at")
+            .in("task_id", taskIds)
+            .order("created_at", { ascending: false })
+            .limit(500),
+          supabase
+            .from("experiments")
+            .select("id, task_id, paper_id, status, metrics, created_at")
+            .in("task_id", taskIds)
+            .order("created_at", { ascending: false })
+            .limit(500),
+          supabase
+            .from("research_directions")
+            .select(
+              "id, task_id, title, rationale, feasibility_score, novelty_score, related_papers, created_at",
+            )
+            .in("task_id", taskIds)
+            .order("created_at", { ascending: false })
+            .limit(500),
+        ])
+        papers = (papersRes.data ?? []) as SupabasePaper[]
+        experiments = (experimentsRes.data ?? []) as SupabaseExperiment[]
+        directions = (directionsRes.data ?? []) as SupabaseDirection[]
+      }
+    }
 
     // Cross-type semantic edges: papers & directions → memories
     if (supermemoryEnabled && documents.length > 0) {
@@ -198,9 +222,9 @@ export async function GET() {
     const graph = buildGraphData({
       documents,
       papers,
-      experiments: (experimentsRes.data ?? []) as SupabaseExperiment[],
+      experiments,
       directions,
-      tasks: (tasksRes.data ?? []) as SupabaseTask[],
+      tasks,
       semanticEdges,
     })
 
