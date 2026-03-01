@@ -711,16 +711,10 @@ function EventStreamPanel({ events }: { events: LogEntry[] }) {
             </p>
           )}
           {events.map((ev) => {
-            const color =
-              ev.type === "thought" ? "text-chart-3"
-                : ev.type === "action" ? "text-chart-2"
-                : ev.type === "result" ? "text-success"
-                : ev.type === "error" ? "text-destructive"
-                : "text-muted-foreground"
             return (
               <div key={ev.id} className="flex items-start gap-1.5 rounded px-1.5 py-0.5 font-mono text-[10px] hover:bg-secondary/40 transition-colors">
                 <span className="shrink-0 text-muted-foreground/60 tabular-nums">{ev.timestamp}</span>
-                <span className={cn("shrink-0 font-medium", color)}>[{ev.agent}]</span>
+                <span className={cn("shrink-0 font-medium", getAgentColor(ev.agent))}>[{ev.agent}]</span>
                 <span className="text-foreground/60 break-all leading-relaxed">{ev.message.slice(0, 200)}</span>
               </div>
             )
