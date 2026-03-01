@@ -396,16 +396,11 @@ export async function deleteProject(id: string): Promise<void> {
 }
 
 export async function fetchDashboardStatsForProject(projectId: string): Promise<DashboardStats> {
-  const project = await fetchProject(projectId)
-  if (!project.team_id) {
-    return { totalTasks: 0, completedTasks: 0, totalTokens: 0, promptTokens: 0, completionTokens: 0, totalPapers: 0, totalExperiments: 0, totalDirections: 0 }
-  }
-
   const supabase = getSupabase()
   const { data: taskRows, error: taskErr } = await supabase
     .from("tasks")
     .select("id, status, total_usage")
-    .eq("team_id", project.team_id)
+    .eq("project_id", projectId)
   if (taskErr) throw taskErr
 
   const rows = taskRows ?? []
@@ -447,16 +442,14 @@ export async function fetchDashboardStatsForProject(projectId: string): Promise<
   }
 }
 
-// ── Scoped queries (filter by project_id via its team_id → tasks.team_id) ──
+// ── Scoped queries (filter by project_id on tasks) ──
 
 export async function fetchTasksForProject(projectId: string, limit = 50): Promise<TaskRow[]> {
-  const project = await fetchProject(projectId)
-  if (!project.team_id) return []
   const supabase = getSupabase()
   const { data, error } = await supabase
     .from("tasks")
     .select("*")
-    .eq("team_id", project.team_id)
+    .eq("project_id", projectId)
     .order("created_at", { ascending: false })
     .limit(limit)
   if (error) throw error
@@ -468,13 +461,11 @@ export async function fetchPapersForProject(
   page = 0,
   pageSize = 50,
 ): Promise<{ data: Paper[]; total: number }> {
-  const project = await fetchProject(projectId)
-  if (!project.team_id) return { data: [], total: 0 }
   const supabase = getSupabase()
   const taskIds = await supabase
     .from("tasks")
     .select("id")
-    .eq("team_id", project.team_id)
+    .eq("project_id", projectId)
   const ids = (taskIds.data ?? []).map((t) => t.id)
   if (ids.length === 0) return { data: [], total: 0 }
   const from = page * pageSize
@@ -490,13 +481,11 @@ export async function fetchPapersForProject(
 }
 
 export async function fetchEventsForProject(projectId: string, limit = 200): Promise<TaskEventRow[]> {
-  const project = await fetchProject(projectId)
-  if (!project.team_id) return []
   const supabase = getSupabase()
   const taskIds = await supabase
     .from("tasks")
     .select("id")
-    .eq("team_id", project.team_id)
+    .eq("project_id", projectId)
   const ids = (taskIds.data ?? []).map((t) => t.id)
   if (ids.length === 0) return []
   const { data, error } = await supabase

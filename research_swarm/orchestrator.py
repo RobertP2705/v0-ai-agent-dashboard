@@ -26,6 +26,7 @@ def run_research(
     query: str,
     model_remote: Any,
     team_id: str | None = None,
+    project_id: str | None = None,
     memory_context: list[dict] | None = None,
 ) -> Generator[dict, None, dict]:
     """Full orchestration pipeline: triage -> parallel fan-out -> merge.
@@ -46,7 +47,7 @@ def run_research(
         augmented_query = query
 
     try:
-        task_row = db.create_task(query=query, team_id=team_id)
+        task_row = db.create_task(query=query, team_id=team_id, project_id=project_id)
     except Exception as exc:
         yield _event("none", "system", "error",
                       f"Database error creating task: {exc}")
