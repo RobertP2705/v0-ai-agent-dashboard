@@ -12,7 +12,6 @@ progress to the UI so the model sees the sandbox is still running.
 from __future__ import annotations
 
 import queue
-import threading
 from typing import Any
 
 import modal
@@ -178,66 +177,28 @@ def modal_sandbox(
             env={"PYTHONUNBUFFERED": "1"},
             pty=True,
         )
+        # Modal docs: "read() blocks until the process finishes and returns the entire output stream."
+        # Do not read in background threads—wait() then read() in main thread for reliable capture.
+        try:
+            proc.wait()
+        except Exception as e:
+            if progress_queue is not None:
+                progress_queue.put(("done", _sandbox_result("", "", -1, str(e))))
+            raise
+        _raw_stdout = proc.stdout.read()
+        _raw_stderr = proc.stderr.read()
+        stdout = _raw_stdout.decode() if isinstance(_raw_stdout, bytes) else (_raw_stdout or "")
+        stderr = _raw_stderr.decode() if isinstance(_raw_stderr, bytes) else (_raw_stderr or "")
+        exit_code = proc.returncode if proc.returncode is not None else -1
+        result = _sandbox_result(stdout, stderr, exit_code)
         if progress_queue is not None:
-            stdout_chunks: list[str] = []
-            stderr_chunks: list[str] = []
-
-            def read_stream(stream, kind: str, chunks_list: list[str]):
-                try:
-                    while True:
-                        data = stream.read(4096)
-                        if not data:
-                            break
-                        s = data.decode() if isinstance(data, bytes) else data
-                        chunks_list.append(s)
-                        progress_queue.put((kind, s))
-                except Exception:
-                    pass
-
-            t_stdout = threading.Thread(target=read_stream, args=(proc.stdout, "stdout", stdout_chunks), daemon=True)
-            t_stderr = threading.Thread(target=read_stream, args=(proc.stderr, "stderr", stderr_chunks), daemon=True)
-            t_stdout.start()
-            t_stderr.start()
-            try:
-                proc.wait()
-            except Exception as e:
-                if progress_queue is not None:
-                    progress_queue.put(("done", _sandbox_result("".join(stdout_chunks), "".join(stderr_chunks), -1, str(e))))
-                raise
-            t_stdout.join(timeout=5)
-            t_stderr.join(timeout=5)
-            stdout = "".join(stdout_chunks)
-            stderr = "".join(stderr_chunks)
-            exit_code = proc.returncode if proc.returncode is not None else -1
-            result = _sandbox_result(stdout, stderr, exit_code)
+            if stdout:
+                progress_queue.put(("stdout", stdout))
+            if stderr:
+                progress_queue.put(("stderr", stderr))
             progress_queue.put(("done", result))
             return result
-        # Read streams in background (same as streaming path) so we capture output before process exits
-        _stdout_chunks: list[str] = []
-        _stderr_chunks: list[str] = []
-
-        def _read(stream, chunks: list[str]):
-            try:
-                while True:
-                    data = stream.read(4096)
-                    if not data:
-                        break
-                    s = data.decode() if isinstance(data, bytes) else data
-                    chunks.append(s)
-            except Exception:
-                pass
-
-        _t1 = threading.Thread(target=_read, args=(proc.stdout, _stdout_chunks), daemon=True)
-        _t2 = threading.Thread(target=_read, args=(proc.stderr, _stderr_chunks), daemon=True)
-        _t1.start()
-        _t2.start()
-        proc.wait()
-        _t1.join(timeout=5)
-        _t2.join(timeout=5)
-        stdout = "".join(_stdout_chunks)
-        stderr = "".join(_stderr_chunks)
-        exit_code = proc.returncode if proc.returncode is not None else -1
-        return _sandbox_result(stdout, stderr, exit_code)
+        return result
     except Exception as e:
         res = _sandbox_result("", "", -1, str(e))
         if progress_queue is not None:
