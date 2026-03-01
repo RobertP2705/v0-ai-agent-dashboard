@@ -2,7 +2,7 @@
 
 > **HACKATHON PROJECT** — This is a hackathon demo. Read [HACKATHON.md](./HACKATHON.md) first for priorities and ground rules before making any changes.
 
-Docs for the **Magi Swam — AI Agent Research Dashboard**. Control the number and type of AI workers that collaborate on research projects.
+Docs for the **Magi Swarm — AI Agent Research Dashboard**. Control the number and type of AI workers that collaborate on research projects.
 
 | Doc | Purpose |
 |-----|---------|

@@ -71,7 +71,7 @@ export default function LoginPage() {
             </div>
             <div className="text-center">
               <h1 className="text-xl font-semibold tracking-tight text-foreground">
-                Magi Swam
+                Magi Swarm
               </h1>
               <p className="mt-1.5 font-mono text-xs text-muted-foreground/70">
                 AI Agent Research Dashboard

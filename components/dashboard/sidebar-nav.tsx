@@ -109,7 +109,7 @@ export function SidebarNav({
         </div>
         <div>
           <h1 className="text-sm font-semibold tracking-tight text-sidebar-foreground">
-            Magi Swam
+            Magi Swarm
           </h1>
           <p className="font-mono text-[10px] text-muted-foreground/70">v3.0.0</p>
         </div>
