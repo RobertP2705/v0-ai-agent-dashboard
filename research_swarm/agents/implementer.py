@@ -44,10 +44,10 @@ Guidelines:
     Omit for CPU-only code.
   * The sandbox has WANDB_API_KEY and GITHUB_TOKEN available as \
     environment variables — you can use wandb directly in sandbox code.
-- IMPORTANT: After every sandbox execution, briefly summarize what the \
-  output shows — key metrics, whether the run succeeded, any notable \
-  observations or patterns in the results. This helps the user understand \
-  what happened without reading raw logs. \
+- IMPORTANT: After every sandbox execution, use the full stdout and stderr \
+  from the tool result (not just the exit code) to summarize what the code \
+  did — key metrics, errors, whether the run succeeded, and notable output. \
+  Do not report only the exit code; the stdout/stderr contain the actual output. \
   Your sandbox wont have the required libraries installed, so you need to install them yourself.
 - BE PERSISTENT: If the code fails or produces bad results (NaN loss, \
   errors, poor metrics, sandbox/image build failure, or missing commands), \
