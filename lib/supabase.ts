@@ -148,32 +148,39 @@ export async function toggleAgentInTeam(agentRowId: string, enabled: boolean): P
   if (error) throw error
 }
 
-// ── Chat history (per-user, stored in Supabase) ─────────────────────────
+// ── Chat history (per-user per-project, stored in Supabase) ──────────────
 
-export async function loadChatHistory(): Promise<unknown[] | null> {
+export async function loadChatHistory(projectId: string): Promise<unknown[] | null> {
   const supabase = getSupabase()
   const { data, error } = await supabase
     .from("chat_history")
     .select("messages")
+    .eq("project_id", projectId)
     .maybeSingle()
   if (error) throw error
   return (data?.messages as unknown[]) ?? null
 }
 
-export async function saveChatHistory(userId: string, messages: unknown[]): Promise<void> {
+export async function saveChatHistory(userId: string, projectId: string, messages: unknown[]): Promise<void> {
   const supabase = getSupabase()
   const { error } = await supabase
     .from("chat_history")
-    .upsert({ user_id: userId, messages, updated_at: new Date().toISOString() })
+    .upsert({
+      user_id: userId,
+      project_id: projectId,
+      messages,
+      updated_at: new Date().toISOString(),
+    })
   if (error) throw error
 }
 
-export async function clearChatHistory(userId: string): Promise<void> {
+export async function clearChatHistory(userId: string, projectId: string): Promise<void> {
   const supabase = getSupabase()
   const { error } = await supabase
     .from("chat_history")
     .delete()
     .eq("user_id", userId)
+    .eq("project_id", projectId)
   if (error) throw error
 }
 

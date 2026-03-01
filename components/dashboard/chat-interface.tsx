@@ -839,7 +839,8 @@ export function ChatInterface({ fullscreen = false, projectId, teamId }: ChatInt
   const bottomRef = useRef<HTMLDivElement>(null)
   const activeTaskIdRef = useRef<string | null>(null)
   const activeTaskMsgIdRef = useRef<string | null>(null)
-  const loadedForUserRef = useRef<string | null | undefined>(undefined)
+  const loadedKeyRef = useRef<string | null>(null)
+  const historyLoadedRef = useRef(false)
   const savedToMemoryRef = useRef<Set<string>>(new Set())
   const [memoryEnabled, setMemoryEnabled] = useState(false)
   const [streamStartTime, setStreamStartTime] = useState<number | null>(null)
@@ -873,12 +874,17 @@ export function ChatInterface({ fullscreen = false, projectId, teamId }: ChatInt
 
   useEffect(() => {
     if (userId === undefined) return
-    if (loadedForUserRef.current === userId) return
-    loadedForUserRef.current = userId
+    if (!projectId) return
 
-    // Authenticated users: load from Supabase DB (project-specific)
+    const loadKey = `${userId ?? "anon"}:${projectId}`
+    if (loadedKeyRef.current === loadKey) return
+    loadedKeyRef.current = loadKey
+    historyLoadedRef.current = false
+    setMessages([])
+    savedToMemoryRef.current = new Set()
+
     if (userId && supabaseConfigured) {
-      loadChatHistory()
+      loadChatHistory(projectId)
         .then(async (dbMessages) => {
           if (dbMessages && Array.isArray(dbMessages) && dbMessages.length > 0) {
             const msgs = dbMessages as ChatMessage[]
@@ -886,6 +892,7 @@ export function ChatInterface({ fullscreen = false, projectId, teamId }: ChatInt
               if (m.memorySaved) savedToMemoryRef.current.add(m.id)
             }
             setMessages(msgs)
+            historyLoadedRef.current = true
             return
           }
 
@@ -905,28 +912,30 @@ export function ChatInterface({ fullscreen = false, projectId, teamId }: ChatInt
             }
             if (restored.length > 0) {
               setMessages(restored)
-              saveChatHistory(userId, prepareForStorage(restored, 50)).catch(() => {})
+              saveChatHistory(userId, projectId, prepareForStorage(restored, 50)).catch(() => {})
             }
           } catch { /* skip */ }
+          historyLoadedRef.current = true
         })
-        .catch(() => {})
+        .catch(() => { historyLoadedRef.current = true })
       return
     }
 
-    // Anonymous / no Supabase: no persisted history available
-  }, [userId])
+    historyLoadedRef.current = true
+  }, [userId, projectId])
 
   // Debounced save to Supabase for authenticated users
   useEffect(() => {
-    if (!userId || !supabaseConfigured) return
+    if (!userId || !projectId || !supabaseConfigured) return
+    if (!historyLoadedRef.current) return
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
     const hasActiveStream = messages.some((m) => m.status === "streaming")
     const delay = hasActiveStream ? 5000 : 500
     saveTimerRef.current = setTimeout(() => {
-      saveChatHistory(userId, prepareForStorage(messages, 50)).catch(() => {})
+      saveChatHistory(userId, projectId, prepareForStorage(messages, 50)).catch(() => {})
     }, delay)
     return () => { if (saveTimerRef.current) clearTimeout(saveTimerRef.current) }
-  }, [messages, userId])
+  }, [messages, userId, projectId])
 
   // Save user messages and completed research tasks to Supermemory
   useEffect(() => {
@@ -1100,9 +1109,9 @@ export function ChatInterface({ fullscreen = false, projectId, teamId }: ChatInt
     if (isSubmitting) return
     setMessages([])
     savedToMemoryRef.current = new Set()
-    if (userId && supabaseConfigured) {
+    if (userId && projectId && supabaseConfigured) {
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
-      clearChatHistory(userId).catch(() => {})
+      clearChatHistory(userId, projectId).catch(() => {})
     }
   }
 
