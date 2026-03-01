@@ -170,6 +170,8 @@ class BaseAgent:
             {"role": "user", "content": task},
         ]
         tool_schemas = self._build_tool_schemas()
+        no_tool_call_nudges = 0  # for implementer: allow several nudges before accepting text-only answer
+        last_sandbox_failed = False  # implementer: avoid stopping right after a failed sandbox
 
         yield self._emit("thought", f"Starting task: {task}")
 
@@ -192,8 +194,57 @@ class BaseAgent:
 
             tool_calls = response.get("tool_calls")
             content = response.get("content")
+            debug = response.get("_debug") or {}
 
             if not tool_calls:
+                # Visibility: so user can tell if model did CoT but no tools vs empty
+                n_content = debug.get("content_len", len(content or ""))
+                n_thinking = debug.get("thinking_len", 0)
+                if tool_schemas:
+                    msg = (
+                        f"[Response] No tool calls (content: {n_content} chars, thinking: {n_thinking} chars). "
+                        + ("Treating as final answer." if (content or "").strip() else "Empty content — model may have hit token limit or not emitted <tool_call>.")
+                    )
+                    raw_preview = debug.get("raw_preview")
+                    if raw_preview:
+                        msg += f" Raw preview: {raw_preview}"
+                    yield self._emit("thought", msg)
+                # Implementer: nudge after failed sandbox, or to encourage first run, or after success if more scripts may be needed
+                is_implementer = self.agent_id == "implementer"
+                max_nudges = 5 if is_implementer else 1
+                implementer_should_keep_going = is_implementer and (
+                    last_sandbox_failed
+                    or no_tool_call_nudges < 2
+                    or (not last_sandbox_failed and no_tool_call_nudges < 3)  # after success: one more chance to run another script
+                )
+                should_nudge = (
+                    tool_schemas
+                    and no_tool_call_nudges < max_nudges
+                    and (implementer_should_keep_going or (not is_implementer and not (content or "").strip() and iteration == 0))
+                )
+                if should_nudge:
+                    no_tool_call_nudges += 1
+                    if is_implementer and last_sandbox_failed:
+                        nudge = (
+                            "The last sandbox run failed. Do not stop. You MUST call modal_sandbox again with a fix "
+                            "(e.g. dataset_dir, correct requirements, setup_commands, or code change). "
+                            "Reply with a <tool_call> for modal_sandbox — do not respond with only text."
+                        )
+                    elif is_implementer and not last_sandbox_failed and no_tool_call_nudges >= 2:
+                        nudge = (
+                            "If the task requires running another script or command to complete it, call modal_sandbox again now. "
+                            "If you are done, provide your final summary in text."
+                        )
+                    elif is_implementer:
+                        nudge = (
+                            "You must use modal_sandbox: clone the repo and run the code. "
+                            "Reply with <tool_call>{\"name\": \"modal_sandbox\", \"arguments\": {\"code\": \"...\", \"requirements\": [...]}}</tool_call>."
+                        )
+                    else:
+                        nudge = "You have access to tools (e.g. web_search, fetch_url, modal_sandbox). Use at least one tool. Reply with <tool_call>...</tool_call>."
+                    yield self._emit("thought", f"Nudge {no_tool_call_nudges}/{max_nudges}: use tools, do not stop with only text.")
+                    messages.append({"role": "user", "content": nudge})
+                    continue
                 answer = content or ""
                 yield self._emit("result", answer)
                 return AgentResult(
@@ -236,6 +287,7 @@ class BaseAgent:
                     ec = result_meta["exit_code"]
                     stdout_text = result_meta.get("stdout", "")
                     stderr_text = result_meta.get("stderr", "")
+                    last_sandbox_failed = ec != 0
                     if ec == 0:
                         preview = stdout_text.strip()[:120]
                         msg = f"modal_sandbox returned ({len(tool_result)} chars)"
