@@ -21,11 +21,16 @@ import {
   BookOpen,
   Terminal,
   Compass,
+  Sparkles,
+  Loader2,
+  Info,
+  MessageSquare,
 } from "lucide-react"
 import { useStreaming } from "@/lib/streaming-context"
 import { getAgentColor } from "@/lib/simulation-data"
 import { useTTSQueue } from "@/hooks/use-tts-queue"
 import { useMeetingTranscript, type TranscriptEntry } from "@/hooks/use-meeting-transcript"
+import { useMeetingSummary } from "@/hooks/use-meeting-summary"
 import { getVoiceForAgent } from "@/lib/tts-config"
 
 // ── Agent icon map (same as chat-interface) ────────────────────────────────
@@ -266,12 +271,16 @@ export function MeetingRoom({ projectId, teamId }: MeetingRoomProps = {}) {
   const [meetingConcluded, setMeetingConcluded] = useState(false)
   const ttsAvailable = useTTSAvailable()
 
+  const meetingSummary = useMeetingSummary()
+  const showSummary = meetingSummary.summary.length > 0
+
   const effectiveTtsEnabled = ttsEnabled && ttsAvailable === true
   const ttsQueue = useTTSQueue(effectiveTtsEnabled)
   const { transcript, seekToEvent } = useMeetingTranscript(
     currentEvents,
     ttsQueue,
     effectiveTtsEnabled,
+    showSummary ? meetingSummary.summary : undefined,
   )
 
   // Track scroll behavior
@@ -376,12 +385,19 @@ export function MeetingRoom({ projectId, teamId }: MeetingRoomProps = {}) {
             </Badge>
           )}
 
-          {meetingConcluded && !isStreaming && transcript.length > 0 && (
+          {meetingConcluded && !isStreaming && transcript.length > 0 && !showSummary && (
             <Badge
               variant="outline"
               className="font-mono text-[9px] text-muted-foreground"
             >
               Meeting concluded
+            </Badge>
+          )}
+
+          {showSummary && (
+            <Badge className="bg-primary/15 text-primary border-primary/30 font-mono text-[9px] px-1.5 py-0">
+              <Sparkles className="mr-1 h-2.5 w-2.5" />
+              Summary
             </Badge>
           )}
         </div>
@@ -450,6 +466,67 @@ export function MeetingRoom({ projectId, teamId }: MeetingRoomProps = {}) {
           </button>
         </div>
       </div>
+
+      {/* ── Summary prompt / loading ────────────────────────────────── */}
+      {!isStreaming && currentEvents.length > 0 && !showSummary && !meetingSummary.isLoading && (
+        <div className="flex shrink-0 items-center gap-2 border-b border-border bg-secondary/30 px-4 py-2">
+          <Info className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+          <span className="font-mono text-[10px] text-muted-foreground">
+            Summarizes your chat history into a conversation between agents
+          </span>
+          <button
+            type="button"
+            onClick={() => meetingSummary.generate(currentEvents)}
+            className="ml-auto flex items-center gap-1.5 rounded-md border border-primary/30 bg-primary/10 px-3 py-1.5 font-mono text-[10px] font-medium text-primary transition-colors hover:bg-primary/20"
+          >
+            <Sparkles className="h-3 w-3" />
+            Generate Summary
+          </button>
+        </div>
+      )}
+
+      {meetingSummary.isLoading && (
+        <div className="flex shrink-0 items-center justify-center gap-2 border-b border-border bg-secondary/30 px-4 py-3">
+          <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
+          <span className="font-mono text-[10px] text-muted-foreground">
+            Summarizing research discussion...
+          </span>
+        </div>
+      )}
+
+      {meetingSummary.error && (
+        <div className="flex shrink-0 items-center gap-2 border-b border-border bg-destructive/5 px-4 py-2">
+          <span className="font-mono text-[10px] text-destructive">
+            {meetingSummary.error}
+          </span>
+          <button
+            type="button"
+            onClick={() => meetingSummary.generate(currentEvents)}
+            className="ml-auto font-mono text-[10px] text-primary underline"
+          >
+            Retry
+          </button>
+        </div>
+      )}
+
+      {showSummary && (
+        <div className="flex shrink-0 items-center gap-2 border-b border-border bg-primary/5 px-4 py-1.5">
+          <MessageSquare className="h-3 w-3 text-primary/70" />
+          <span className="font-mono text-[10px] text-muted-foreground">
+            AI-generated conversation from your chat history
+          </span>
+          <button
+            type="button"
+            onClick={() => {
+              ttsQueue.clearQueue()
+              meetingSummary.clear()
+            }}
+            className="ml-auto font-mono text-[10px] text-muted-foreground underline hover:text-foreground"
+          >
+            Show raw events
+          </button>
+        </div>
+      )}
 
       {/* ── Main transcript area ─────────────────────────────────────── */}
       <ScrollArea className="min-h-0 flex-1" ref={scrollRef}>
@@ -544,7 +621,7 @@ export function MeetingRoom({ projectId, teamId }: MeetingRoomProps = {}) {
             variant="outline"
             className="font-mono text-[9px] px-1.5 py-0 text-muted-foreground"
           >
-            {transcript.length} entries
+            {transcript.length} {showSummary ? "summary" : ""} entries
           </Badge>
 
           {/* Playback speed */}

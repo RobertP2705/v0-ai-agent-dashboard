@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from "react"
 import type { LogEntry } from "@/lib/simulation-data"
 import type { TTSQueueControls, TTSQueueItem } from "@/hooks/use-tts-queue"
+import type { SummaryEntry } from "@/hooks/use-meeting-summary"
 
 export type AudioState = "pending" | "playing" | "played" | "cached"
 
@@ -23,6 +24,7 @@ export function useMeetingTranscript(
   events: LogEntry[],
   ttsQueue: TTSQueueControls,
   enabled: boolean,
+  summaryEntries?: SummaryEntry[],
 ) {
   const [audioStates, setAudioStates] = useState<Map<string, AudioState>>(
     new Map(),
@@ -63,13 +65,25 @@ export function useMeetingTranscript(
     }
   }, [])
 
+  const useSummary = summaryEntries && summaryEntries.length > 0
+  const modeRef = useRef(useSummary)
+
+  // Reset enqueued tracking when switching between summary and raw modes
+  useEffect(() => {
+    if (modeRef.current !== useSummary) {
+      modeRef.current = useSummary
+      enqueuedRef.current = new Set()
+      setAudioStates(new Map())
+    }
+  }, [useSummary])
+
   // Auto-enqueue new speakable events as they stream in
   useEffect(() => {
     if (!enabled) return
 
-    const speakable = events.filter(isSpeakable)
+    const items: LogEntry[] = useSummary ? summaryEntries! : events.filter(isSpeakable)
 
-    for (const event of speakable) {
+    for (const event of items) {
       if (enqueuedRef.current.has(event.id)) continue
       enqueuedRef.current.add(event.id)
 
@@ -86,28 +100,28 @@ export function useMeetingTranscript(
         timestamp: event.timestamp,
       })
     }
-  }, [events, enabled])
+  }, [events, enabled, useSummary, summaryEntries])
 
   const seekToEvent = useCallback(
     (eventId: string) => {
       ttsQueueRef.current.clearQueue()
 
-      const speakable = events.filter(isSpeakable)
-      const idx = speakable.findIndex((e) => e.id === eventId)
+      const items: LogEntry[] = useSummary ? summaryEntries! : events.filter(isSpeakable)
+      const idx = items.findIndex((e) => e.id === eventId)
       if (idx === -1) return
 
       // Reset audio states from this point forward
       setAudioStates((prev) => {
         const next = new Map(prev)
-        for (let i = idx; i < speakable.length; i++) {
-          next.set(speakable[i].id, "pending")
+        for (let i = idx; i < items.length; i++) {
+          next.set(items[i].id, "pending")
         }
         return next
       })
 
       // Re-enqueue from this event forward
-      for (let i = idx; i < speakable.length; i++) {
-        const event = speakable[i]
+      for (let i = idx; i < items.length; i++) {
+        const event = items[i]
         ttsQueueRef.current.enqueue({
           id: event.id,
           text: event.message,
@@ -116,11 +130,12 @@ export function useMeetingTranscript(
         })
       }
     },
-    [events],
+    [events, useSummary, summaryEntries],
   )
 
   // Build the full transcript with audio states
-  const transcript: TranscriptEntry[] = events.filter(isSpeakable).map((event) => ({
+  const source: LogEntry[] = useSummary ? summaryEntries! : events.filter(isSpeakable)
+  const transcript: TranscriptEntry[] = source.map((event) => ({
     ...event,
     audioState: audioStates.get(event.id) ?? "pending",
   }))

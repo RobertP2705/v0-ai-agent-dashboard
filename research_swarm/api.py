@@ -334,6 +334,97 @@ async def get_task_events_endpoint(task_id: str):
     return db.list_events(task_id)
 
 
+# ── Meeting summary ────────────────────────────────────────────────────────
+
+class SummarizeMeetingRequest(BaseModel):
+    events: list[dict]
+    project_context: str = ""
+
+
+_MEETING_SUMMARY_SYSTEM = """\
+You are a meeting summarizer for a multi-agent AI research swarm. You will receive the event log of a research session containing agent thoughts, actions, and results from agents named Paper Collector, Implementer, and Research Director.
+
+Your task: rewrite this into a natural roundtable conversation between the agents. Each agent should speak in character about their contributions:
+- Paper Collector: discusses papers found, key findings, sources
+- Implementer: discusses code written, experiments run, technical results
+- Research Director: discusses strategy, promising directions, synthesis
+
+Rules:
+- Output ONLY a JSON array of objects: [{"agent": "Paper Collector", "message": "..."}, ...]
+- Use the exact agent names: "Paper Collector", "Implementer", "Research Director"
+- Keep it concise and conversational — summarize, don't repeat verbatim logs
+- 8-20 exchanges total depending on session complexity
+- Each message should be 1-3 sentences, natural spoken language (this will be read aloud via TTS)
+- Avoid markdown formatting, code blocks, or URLs in messages — keep it speakable
+- If an agent had no activity, they can still comment briefly or be omitted
+- Start with a brief overview of what was researched, end with next steps or conclusions
+- Do NOT include any text outside the JSON array\
+"""
+
+
+@web_app.post("/research/summarize-meeting")
+async def summarize_meeting(req: SummarizeMeetingRequest):
+    """Summarize research events into a structured multi-agent conversation."""
+    if not req.events:
+        raise HTTPException(400, "No events provided")
+
+    history_lines: list[str] = []
+    for ev in req.events:
+        agent = ev.get("agent", "system")
+        ev_type = ev.get("type", "")
+        text = ev.get("message", "")
+        if agent in ("system", "User") or not text.strip():
+            continue
+        history_lines.append(f"[{agent} / {ev_type}]: {text[:1000]}")
+
+    if not history_lines:
+        raise HTTPException(400, "Events contained no usable content")
+
+    context_block = "\n".join(history_lines[-300:])
+    user_prompt = context_block
+    if req.project_context:
+        user_prompt = f"Project: {req.project_context}\n\n{context_block}"
+
+    model = Qwen3Model()
+    result = model.generate.remote(
+        messages=[
+            {"role": "system", "content": _MEETING_SUMMARY_SYSTEM},
+            {"role": "user", "content": user_prompt},
+        ],
+        temperature=0.3,
+        max_tokens=4096,
+    )
+
+    content = (result.get("content") or "").strip()
+
+    # Parse the JSON array from the response
+    start = content.find("[")
+    end = content.rfind("]")
+    if start == -1 or end == -1:
+        raise HTTPException(502, "Model did not return valid JSON conversation")
+
+    try:
+        conversation = json.loads(content[start:end + 1])
+    except json.JSONDecodeError:
+        raise HTTPException(502, "Model returned malformed JSON")
+
+    if not isinstance(conversation, list):
+        raise HTTPException(502, "Model response was not a JSON array")
+
+    validated: list[dict] = []
+    for i, entry in enumerate(conversation):
+        if isinstance(entry, dict) and "agent" in entry and "message" in entry:
+            validated.append({
+                "agent": str(entry["agent"]),
+                "message": str(entry["message"]),
+            })
+
+    if not validated:
+        raise HTTPException(502, "Model returned no valid conversation entries")
+
+    return {"conversation": validated}
+
+
 # ── Papers, experiments, directions ────────────────────────────────────────
 
 @web_app.get("/papers")
