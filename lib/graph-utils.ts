@@ -137,6 +137,8 @@ export function buildGraphData({
     })
   }
 
+  // Group papers by task_id so we can add same-task paper–paper links later
+  const papersByTask = new Map<string, string[]>()
   for (const paper of papers) {
     const id = `paper-${paper.id}`
     if (nodeIds.has(id)) continue
@@ -154,6 +156,23 @@ export function buildGraphData({
         target: id,
         type: "spawned",
       })
+    }
+    if (paper.task_id) {
+      const list = papersByTask.get(paper.task_id) ?? []
+      list.push(id)
+      papersByTask.set(paper.task_id, list)
+    }
+  }
+  // Connect papers that share the same task (even if task node is not in graph)
+  const seenPaperPair = new Set<string>()
+  for (const [, paperIds] of papersByTask) {
+    if (paperIds.length < 2) continue
+    const [hub, ...rest] = paperIds
+    for (const other of rest) {
+      const key = [hub, other].sort().join("--")
+      if (seenPaperPair.has(key)) continue
+      seenPaperPair.add(key)
+      links.push({ source: hub, target: other, type: "related" })
     }
   }
 
