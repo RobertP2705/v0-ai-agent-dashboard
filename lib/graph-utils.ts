@@ -163,12 +163,14 @@ export function buildGraphData({
       papersByTask.set(paper.task_id, list)
     }
   }
-  // Connect papers that share the same task (even if task node is not in graph)
+  // Connect papers that share the same task; cap per-task edges so the graph stays readable
+  const MAX_PAPER_LINKS_PER_TASK = 8
   const seenPaperPair = new Set<string>()
   for (const [, paperIds] of papersByTask) {
     if (paperIds.length < 2) continue
     const [hub, ...rest] = paperIds
-    for (const other of rest) {
+    const toLink = rest.slice(0, MAX_PAPER_LINKS_PER_TASK - 1)
+    for (const other of toLink) {
       const key = [hub, other].sort().join("--")
       if (seenPaperPair.has(key)) continue
       seenPaperPair.add(key)

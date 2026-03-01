@@ -11,8 +11,9 @@ import {
   type SupabaseTask,
 } from "@/lib/graph-utils"
 
-// Balance: high enough to avoid a dense tangle, low enough for memories to connect (was 0.32, orig 0.45)
-const SEMANTIC_SIMILARITY_THRESHOLD = 0.40
+// Stricter threshold and caps so the graph stays readable (fewer, stronger edges)
+const SEMANTIC_SIMILARITY_THRESHOLD = 0.52
+const MAX_SEMANTIC_EDGES_PER_NODE = 4
 const MAX_DOCUMENTS = 500
 const SEMANTIC_BATCH_SIZE = 8
 const SUPERMEMORY_CALL_TIMEOUT_MS = 8_000
@@ -25,6 +26,30 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
       setTimeout(() => reject(new Error(`Timeout: ${label} exceeded ${ms}ms`)), ms),
     ),
   ])
+}
+
+/** Keep at most maxPerNode semantic edges per node (by highest weight) so the graph stays readable. */
+function capSemanticEdgesPerNode(edges: GraphLink[], maxPerNode: number): GraphLink[] {
+  const byNode = new Map<string, GraphLink[]>()
+  for (const e of edges) {
+    if (e.type !== "semantic") continue
+    const s = e.source
+    const t = e.target
+    const listS = byNode.get(s) ?? []
+    listS.push(e)
+    byNode.set(s, listS)
+    const listT = byNode.get(t) ?? []
+    listT.push(e)
+    byNode.set(t, listT)
+  }
+  const keep = new Set<GraphLink>()
+  for (const [, list] of byNode) {
+    const sorted = [...list].sort((a, b) => (b.weight ?? 0) - (a.weight ?? 0))
+    for (let i = 0; i < Math.min(maxPerNode, sorted.length); i++) {
+      keep.add(sorted[i])
+    }
+  }
+  return edges.filter((e) => e.type !== "semantic" || keep.has(e))
 }
 
 async function computeSemanticEdges(
@@ -48,7 +73,7 @@ async function computeSemanticEdges(
           searchMemoriesWithScore({
             q: typeof query === "string" ? query : String(query),
             containerTag,
-            limit: 6,
+            limit: 3,
           }),
           SUPERMEMORY_CALL_TIMEOUT_MS,
           "searchMemoriesWithScore",
@@ -114,7 +139,7 @@ async function computeCrossTypeEdges(
           searchMemoriesWithScore({
             q: item.text.slice(0, 300),
             containerTag,
-            limit: 4,
+            limit: 2,
           }),
           SUPERMEMORY_CALL_TIMEOUT_MS,
           "crossTypeSearch",
@@ -263,13 +288,14 @@ export async function GET() {
       }
     }
 
+    const cappedSemantic = capSemanticEdgesPerNode(semanticEdges, MAX_SEMANTIC_EDGES_PER_NODE)
     const graph = buildGraphData({
       documents,
       papers,
       experiments,
       directions,
       tasks,
-      semanticEdges,
+      semanticEdges: cappedSemantic,
     })
 
     return NextResponse.json(graph)
