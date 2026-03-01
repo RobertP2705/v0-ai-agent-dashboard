@@ -2,13 +2,8 @@
 
 import { useEffect, useState, useCallback } from "react"
 import { createClient } from "@/lib/supabase/client"
-import { Menu } from "lucide-react"
+import { Menu, FolderOpen } from "lucide-react"
 import { SidebarNav } from "@/components/dashboard/sidebar-nav"
-import { ChatInterface } from "@/components/dashboard/chat-interface"
-import { AgentStatusGrid } from "@/components/dashboard/agent-status-grid"
-import { KnowledgeGraphView } from "@/components/dashboard/knowledge-graph"
-import { PapersView } from "@/components/dashboard/papers-view"
-import { MeetingRoom } from "@/components/dashboard/meeting-room"
 import { ApiCreditsView } from "@/components/dashboard/api-credits-view"
 import { TeamsView } from "@/components/dashboard/teams-view"
 import { ProjectsLanding } from "@/components/dashboard/projects-landing"
@@ -206,20 +201,38 @@ export function DashboardShell() {
               </div>
             )}
 
-            {/* Workspace views (global, unscoped) */}
-            {activeView === "research" && (
-              <div className="flex h-full flex-col gap-4 lg:flex-row">
-                <div className="flex-1"><ChatInterface fullscreen /></div>
-                <div className="w-full lg:w-[340px]"><AgentStatusGrid /></div>
+            {/* Workspace views — require a project to be selected */}
+            {(activeView === "research" ||
+              activeView === "knowledge-graph" ||
+              activeView === "papers" ||
+              activeView === "meeting") && (
+              <div className="flex h-full items-center justify-center">
+                <div className="flex max-w-sm flex-col items-center gap-4 text-center">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
+                    <FolderOpen className="h-6 w-6 text-primary" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-foreground">
+                      No project selected
+                    </p>
+                    <p className="mt-1 font-mono text-xs text-muted-foreground">
+                      Please select a research project first to access this view.
+                    </p>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-2"
+                    onClick={() => {
+                      setActiveView("projects")
+                    }}
+                  >
+                    <FolderOpen className="h-3.5 w-3.5" />
+                    Browse Projects
+                  </Button>
+                </div>
               </div>
             )}
-            {activeView === "knowledge-graph" && (
-              <div className="h-full min-h-[500px]">
-                <KnowledgeGraphView />
-              </div>
-            )}
-            {activeView === "papers" && <PapersView />}
-            {activeView === "meeting" && <MeetingRoom />}
 
             {/* Global views */}
             {activeView === "teams" && <TeamsView />}

@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { BookOpen, Terminal, Compass, FileText, FlaskConical, Signpost, Plus, Minus, Users } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { supabaseConfigured, fetchDashboardStats, fetchTeams, type DashboardStats, type Team } from "@/lib/supabase"
+import { supabaseConfigured, fetchDashboardStats, fetchDashboardStatsForProject, fetchTeams, type DashboardStats, type Team } from "@/lib/supabase"
 import { fetchAgents, scaleAgent, type SwarmAgent } from "@/lib/swarm-client"
 import type { AgentStatus } from "@/lib/simulation-data"
 import { getStatusColor } from "@/lib/simulation-data"
@@ -115,7 +115,11 @@ export function AgentStatusGrid({ projectId, teamId }: AgentStatusGridProps = {}
     }
     if (supabaseConfigured) {
       try {
-        setStats(await fetchDashboardStats())
+        setStats(
+          projectId
+            ? await fetchDashboardStatsForProject(projectId)
+            : await fetchDashboardStats()
+        )
       } catch {
         // keep null
       }
@@ -125,7 +129,7 @@ export function AgentStatusGrid({ projectId, teamId }: AgentStatusGridProps = {}
         // keep empty
       }
     }
-  }, [])
+  }, [projectId])
 
   // Poll faster (3s) while streaming, normal (15s) otherwise
   useEffect(() => {
