@@ -44,13 +44,10 @@ import { getAgentColor } from "@/lib/simulation-data"
 import { streamResearch, cancelTask, type SwarmEvent } from "@/lib/swarm-client"
 import {
   supabaseConfigured,
-  fetchTasks,
-  fetchTaskEvents,
   fetchTeams,
   loadChatHistory,
   saveChatHistory,
   clearChatHistory,
-  type TaskEventRow,
   type Team,
 } from "@/lib/supabase"
 import { createClient as createSupabaseClient } from "@/lib/supabase/client"
@@ -100,17 +97,6 @@ function swarmEventToLog(event: SwarmEvent): LogEntry {
     type: event.type === "done" ? "result" : event.type,
     message: event.message,
     meta: event.meta,
-  }
-}
-
-function dbEventToLog(row: TaskEventRow): LogEntry {
-  return {
-    id: row.id,
-    timestamp: formatTime(row.created_at),
-    agent: row.agent_type,
-    type: row.event_type as LogEntry["type"],
-    message: row.message,
-    meta: row.meta as Record<string, unknown> | undefined,
   }
 }
 
@@ -885,36 +871,14 @@ export function ChatInterface({ fullscreen = false, projectId, teamId }: ChatInt
 
     if (userId && supabaseConfigured) {
       loadChatHistory(projectId)
-        .then(async (dbMessages) => {
+        .then((dbMessages) => {
           if (dbMessages && Array.isArray(dbMessages) && dbMessages.length > 0) {
             const msgs = dbMessages as ChatMessage[]
             for (const m of msgs) {
               if (m.memorySaved) savedToMemoryRef.current.add(m.id)
             }
             setMessages(msgs)
-            historyLoadedRef.current = true
-            return
           }
-
-          // DB empty — try restoring from tasks table (first-time migration)
-          try {
-            const tasks = await fetchTasks(20)
-            const restored: ChatMessage[] = []
-            for (const t of tasks.reverse()) {
-              restored.push({ id: `user-${t.id}`, type: "user", query: t.query, status: "completed", summary: "", events: [], timestamp: formatTime(t.created_at) })
-              let events: LogEntry[] = []
-              try { events = (await fetchTaskEvents(t.id)).map(dbEventToLog) } catch { /* skip */ }
-              restored.push({
-                id: `task-${t.id}`, type: "task", query: t.query, taskId: t.id,
-                status: t.status === "completed" ? "completed" : t.status === "error" ? "error" : "completed",
-                summary: t.merged_answer || extractSummary(events), events, timestamp: formatTime(t.created_at),
-              })
-            }
-            if (restored.length > 0) {
-              setMessages(restored)
-              saveChatHistory(userId, projectId, prepareForStorage(restored, 50)).catch(() => {})
-            }
-          } catch { /* skip */ }
           historyLoadedRef.current = true
         })
         .catch(() => { historyLoadedRef.current = true })
