@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
-import { listDocuments, searchMemoriesWithScore } from "@/lib/supermemory"
+import { listAllDocuments, searchMemoriesWithScore } from "@/lib/supermemory"
 import {
   buildGraphData,
   type GraphLink,
@@ -129,9 +129,10 @@ export async function GET() {
 
     if (supermemoryEnabled) {
       try {
-        const listResp = await listDocuments({
+        const listResp = await listAllDocuments({
           containerTags: [user.id],
-          limit: MAX_DOCUMENTS,
+          maxDocuments: MAX_DOCUMENTS,
+          pageSize: 100,
           includeContent: true,
         })
         documents = (listResp.memories ?? []).map((m) => ({
