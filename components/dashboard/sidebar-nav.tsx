@@ -4,7 +4,7 @@ import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { cn } from "@/lib/utils"
 import { createClient } from "@/lib/supabase/client"
-import { fetchProjects, type ResearchProject } from "@/lib/supabase"
+import type { ResearchProject } from "@/lib/supabase"
 import {
   LayoutGrid,
   MessageSquare,
@@ -57,6 +57,8 @@ interface SidebarNavProps {
   inSheet?: boolean
   /** Trigger the onboarding tour */
   onStartTour?: () => void
+  /** Shared projects list from parent */
+  projects: ResearchProject[]
 }
 
 export function SidebarNav({
@@ -67,9 +69,9 @@ export function SidebarNav({
   onClose,
   inSheet,
   onStartTour,
+  projects,
 }: SidebarNavProps) {
   const [user, setUser] = useState<User | null>(null)
-  const [projects, setProjects] = useState<ResearchProject[]>([])
   const router = useRouter()
 
   useEffect(() => {
@@ -77,24 +79,7 @@ export function SidebarNav({
     supabase.auth.getUser().then(({ data: { user } }) => {
       setUser(user)
     })
-    loadProjects()
   }, [])
-
-  async function loadProjects() {
-    try {
-      const p = await fetchProjects()
-      setProjects(p)
-    } catch {
-      // non-fatal
-    }
-  }
-
-  // Refresh project list when returning to projects landing
-  useEffect(() => {
-    if (activeView === "projects" && !selectedProjectId) {
-      loadProjects()
-    }
-  }, [activeView, selectedProjectId])
 
   const handleSignOut = async () => {
     const supabase = createClient()

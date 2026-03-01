@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react"
 import { createClient } from "@/lib/supabase/client"
+import { fetchProjects } from "@/lib/supabase"
 import { Menu } from "lucide-react"
 import { SidebarNav } from "@/components/dashboard/sidebar-nav"
 import { ApiCreditsView } from "@/components/dashboard/api-credits-view"
@@ -56,25 +57,37 @@ export function DashboardShell() {
   const [activeView, setActiveView] = useState("projects")
   const [selectedProject, setSelectedProject] = useState<ResearchProject | null>(null)
   const [user, setUser] = useState<User | null>(null)
+  const [projects, setProjects] = useState<ResearchProject[]>([])
+  const [projectsLoaded, setProjectsLoaded] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [tourActive, setTourActive] = useState(false)
   const isMobile = useIsMobile()
+
+  const loadProjects = useCallback(async () => {
+    try {
+      const p = await fetchProjects()
+      setProjects(p)
+    } catch {
+      // non-fatal
+    } finally {
+      setProjectsLoaded(true)
+    }
+  }, [])
 
   useEffect(() => {
     const supabase = createClient()
     supabase.auth.getUser().then(({ data: { user } }) => {
       setUser(user)
 
-      // Check if this is a first-time user (no tour_completed flag)
       if (user) {
         const tourKey = `swarm-lab-tour-completed-${user.id}`
         if (!localStorage.getItem(tourKey)) {
-          // Delay tour start slightly so UI renders first
           setTimeout(() => setTourActive(true), 800)
         }
       }
     })
-  }, [])
+    loadProjects()
+  }, [loadProjects])
 
   const handleSelectProject = useCallback((project: ResearchProject | null) => {
     setSelectedProject(project)
@@ -108,6 +121,7 @@ export function DashboardShell() {
       onClose={() => setSidebarOpen(false)}
       inSheet={isMobile}
       onStartTour={handleStartTour}
+      projects={projects}
     />
   )
 
@@ -172,7 +186,12 @@ export function DashboardShell() {
           <div className="flex-1 overflow-auto p-2 sm:p-4">
             {/* Projects landing page */}
             {activeView === "projects" && (
-              <ProjectsLanding onSelectProject={handleSelectProject} />
+              <ProjectsLanding
+                onSelectProject={handleSelectProject}
+                projects={projects}
+                setProjects={setProjects}
+                projectsLoaded={projectsLoaded}
+              />
             )}
 
             {/* Project detail sub-views */}

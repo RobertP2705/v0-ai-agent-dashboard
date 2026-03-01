@@ -1,8 +1,7 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { type Dispatch, type SetStateAction, useEffect, useState } from "react"
 import {
-  fetchProjects,
   createProject,
   deleteProject,
   fetchTeams,
@@ -42,6 +41,9 @@ import { cn } from "@/lib/utils"
 
 interface ProjectsLandingProps {
   onSelectProject: (project: ResearchProject) => void
+  projects: ResearchProject[]
+  setProjects: Dispatch<SetStateAction<ResearchProject[]>>
+  projectsLoaded: boolean
 }
 
 const statusColors: Record<string, string> = {
@@ -51,8 +53,7 @@ const statusColors: Record<string, string> = {
   completed: "bg-info/20 text-info border-info/30",
 }
 
-export function ProjectsLanding({ onSelectProject }: ProjectsLandingProps) {
-  const [projects, setProjects] = useState<ResearchProject[]>([])
+export function ProjectsLanding({ onSelectProject, projects, setProjects, projectsLoaded }: ProjectsLandingProps) {
   const [teams, setTeams] = useState<Team[]>([])
   const [loading, setLoading] = useState(true)
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -62,17 +63,16 @@ export function ProjectsLanding({ onSelectProject }: ProjectsLandingProps) {
   const [creating, setCreating] = useState(false)
 
   useEffect(() => {
-    loadData()
+    loadTeams()
   }, [])
 
-  async function loadData() {
+  async function loadTeams() {
     setLoading(true)
     try {
-      const [p, t] = await Promise.all([fetchProjects(), fetchTeams()])
-      setProjects(p)
+      const t = await fetchTeams()
       setTeams(t)
     } catch (err) {
-      console.error("Failed to load projects:", err)
+      console.error("Failed to load teams:", err)
     } finally {
       setLoading(false)
     }
@@ -108,7 +108,7 @@ export function ProjectsLanding({ onSelectProject }: ProjectsLandingProps) {
     }
   }
 
-  if (loading) {
+  if (loading || !projectsLoaded) {
     return (
       <div className="flex h-full items-center justify-center">
         <div className="flex flex-col items-center gap-3">
