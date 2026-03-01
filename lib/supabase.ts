@@ -150,11 +150,12 @@ export async function toggleAgentInTeam(agentRowId: string, enabled: boolean): P
 
 // ── Chat history (per-user per-project, stored in Supabase) ──────────────
 
-export async function loadChatHistory(projectId: string): Promise<unknown[] | null> {
+export async function loadChatHistory(userId: string, projectId: string): Promise<unknown[] | null> {
   const supabase = getSupabase()
   const { data, error } = await supabase
     .from("chat_history")
     .select("messages")
+    .eq("user_id", userId)
     .eq("project_id", projectId)
     .maybeSingle()
   if (error) throw error

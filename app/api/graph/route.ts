@@ -14,24 +14,44 @@ import {
 const SEMANTIC_SIMILARITY_THRESHOLD = 0.45
 const MAX_DOCUMENTS = 500
 const SEMANTIC_BATCH_SIZE = 8
+const SUPERMEMORY_CALL_TIMEOUT_MS = 8_000
+const SUPERMEMORY_TOTAL_TIMEOUT_MS = 25_000
+
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error(`Timeout: ${label} exceeded ${ms}ms`)), ms),
+    ),
+  ])
+}
 
 async function computeSemanticEdges(
   documents: SupamemoryDoc[],
   containerTag: string,
   edgeSet: Set<string>,
+  deadline: number,
 ): Promise<GraphLink[]> {
   const edges: GraphLink[] = []
 
   for (let offset = 0; offset < documents.length; offset += SEMANTIC_BATCH_SIZE) {
+    if (Date.now() > deadline) {
+      console.warn(`[graph] Semantic edge computation hit deadline at batch offset ${offset}/${documents.length}`)
+      break
+    }
     const batch = documents.slice(offset, offset + SEMANTIC_BATCH_SIZE)
     const searchResults = await Promise.allSettled(
       batch.map((doc) => {
         const query = doc.title || doc.summary || doc.content || "memory"
-        return searchMemoriesWithScore({
-          q: typeof query === "string" ? query : String(query),
-          containerTag,
-          limit: 6,
-        })
+        return withTimeout(
+          searchMemoriesWithScore({
+            q: typeof query === "string" ? query : String(query),
+            containerTag,
+            limit: 6,
+          }),
+          SUPERMEMORY_CALL_TIMEOUT_MS,
+          "searchMemoriesWithScore",
+        )
       }),
     )
 
@@ -64,6 +84,7 @@ async function computeCrossTypeEdges(
   directions: SupabaseDirection[],
   containerTag: string,
   edgeSet: Set<string>,
+  deadline: number,
 ): Promise<GraphLink[]> {
   const edges: GraphLink[] = []
 
@@ -78,14 +99,22 @@ async function computeCrossTypeEdges(
   }
 
   for (let offset = 0; offset < queries.length; offset += SEMANTIC_BATCH_SIZE) {
+    if (Date.now() > deadline) {
+      console.warn(`[graph] Cross-type edge computation hit deadline at batch offset ${offset}/${queries.length}`)
+      break
+    }
     const batch = queries.slice(offset, offset + SEMANTIC_BATCH_SIZE)
     const results = await Promise.allSettled(
       batch.map((item) =>
-        searchMemoriesWithScore({
-          q: item.text.slice(0, 300),
-          containerTag,
-          limit: 3,
-        }),
+        withTimeout(
+          searchMemoriesWithScore({
+            q: item.text.slice(0, 300),
+            containerTag,
+            limit: 3,
+          }),
+          SUPERMEMORY_CALL_TIMEOUT_MS,
+          "crossTypeSearch",
+        ),
       ),
     )
     for (let i = 0; i < results.length; i++) {
@@ -126,15 +155,20 @@ export async function GET() {
     let semanticEdges: GraphLink[] = []
     const edgeSet = new Set<string>()
     const supermemoryEnabled = !!process.env.SUPERMEMORY_API_KEY
+    const deadline = Date.now() + SUPERMEMORY_TOTAL_TIMEOUT_MS
 
     if (supermemoryEnabled) {
       try {
-        const listResp = await listAllDocuments({
-          containerTags: [user.id],
-          maxDocuments: MAX_DOCUMENTS,
-          pageSize: 100,
-          includeContent: true,
-        })
+        const listResp = await withTimeout(
+          listAllDocuments({
+            containerTags: [user.id],
+            maxDocuments: MAX_DOCUMENTS,
+            pageSize: 100,
+            includeContent: true,
+          }),
+          SUPERMEMORY_CALL_TIMEOUT_MS * 3,
+          "listAllDocuments",
+        )
         documents = (listResp.memories ?? []).map((m) => ({
           id: m.id,
           title: m.title,
@@ -144,8 +178,12 @@ export async function GET() {
           content: (m as unknown as { content?: string | null }).content ?? undefined,
         }))
 
-        const memEdges = await computeSemanticEdges(documents, user.id, edgeSet)
-        semanticEdges.push(...memEdges)
+        if (Date.now() < deadline) {
+          const memEdges = await computeSemanticEdges(documents, user.id, edgeSet, deadline)
+          semanticEdges.push(...memEdges)
+        } else {
+          console.warn("[graph] Skipping semantic edges — deadline reached after document fetch")
+        }
       } catch (err) {
         console.warn("[graph] Supermemory fetch failed, continuing with Supabase data only:", err)
       }
@@ -205,13 +243,14 @@ export async function GET() {
     }
 
     // Cross-type semantic edges: papers & directions → memories
-    if (supermemoryEnabled && documents.length > 0) {
+    if (supermemoryEnabled && documents.length > 0 && Date.now() < deadline) {
       try {
         const crossEdges = await computeCrossTypeEdges(
           papers,
           directions,
           user.id,
           edgeSet,
+          deadline,
         )
         semanticEdges.push(...crossEdges)
       } catch (err) {

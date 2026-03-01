@@ -869,9 +869,12 @@ export function ChatInterface({ fullscreen = false, projectId, teamId }: ChatInt
     setMessages([])
     savedToMemoryRef.current = new Set()
 
+    let stale = false
+
     if (userId && supabaseConfigured) {
-      loadChatHistory(projectId)
+      loadChatHistory(userId, projectId)
         .then((dbMessages) => {
+          if (stale) return
           if (dbMessages && Array.isArray(dbMessages) && dbMessages.length > 0) {
             const msgs = dbMessages as ChatMessage[]
             for (const m of msgs) {
@@ -881,8 +884,10 @@ export function ChatInterface({ fullscreen = false, projectId, teamId }: ChatInt
           }
           historyLoadedRef.current = true
         })
-        .catch(() => { historyLoadedRef.current = true })
-      return
+        .catch(() => {
+          if (!stale) historyLoadedRef.current = true
+        })
+      return () => { stale = true }
     }
 
     historyLoadedRef.current = true

@@ -33,7 +33,7 @@ Create via `modal secret create <name> KEY=value`:
 ### Supabase Schema
 
 1. Run `research_swarm/schema.sql` in the Supabase SQL editor
-2. Run migrations in `scripts/` in order (001, 002, 003) — see [ARCHITECTURE.md](./ARCHITECTURE.md#migration-scripts-scripts)
+2. Run migrations in `scripts/` in order (001, 002, 003, 004_create_research_projects, 004_chat_history_and_task_rls, 005) — see [ARCHITECTURE.md](./ARCHITECTURE.md#migration-scripts-scripts)
 
 ### Supabase Auth
 
@@ -60,8 +60,10 @@ The dashboard expects `MODAL_ENDPOINT_URL` to point at a deployed Modal app. The
 ├── app/                        # Next.js App Router
 │   ├── api/
 │   │   ├── agents/             # GET /agents, POST /agents/scale → Modal
+│   │   ├── graph/              # GET /graph → knowledge graph (Supabase + Supermemory)
 │   │   ├── swarm/              # tasks, stream (SSE), cancel → Modal
 │   │   ├── teams/              # teams CRUD → Modal
+│   │   ├── tts/                # POST /tts → text-to-speech for Meeting Room
 │   │   └── memory/             # Supermemory status + add
 │   ├── auth/
 │   │   ├── login/page.tsx      # Login (OAuth + email)
@@ -77,22 +79,30 @@ The dashboard expects `MODAL_ENDPOINT_URL` to point at a deployed Modal app. The
 │   │   ├── sidebar-nav.tsx     # Navigation sidebar with user menu
 │   │   ├── chat-interface.tsx  # Research console (streaming, events, memory)
 │   │   ├── agent-status-grid.tsx # Agent status cards with scaling
+│   │   ├── projects-landing.tsx  # Projects list / creation landing page
+│   │   ├── project-detail-view.tsx # Single project view (chat, papers, graph)
+│   │   ├── knowledge-graph.tsx # Force-directed knowledge graph visualization
+│   │   ├── papers-view.tsx     # Papers list for a project
 │   │   ├── teams-view.tsx      # Team management
 │   │   ├── team-card.tsx       # Team card display
 │   │   ├── agent-picker.tsx    # Agent type picker for teams
 │   │   ├── meeting-room.tsx    # Multi-agent discussion (TTS)
+│   │   ├── onboarding-tour.tsx # First-run onboarding flow
 │   │   ├── api-monitor.tsx     # API usage metrics
 │   │   ├── api-credits-view.tsx # Keys, endpoints, usage
 │   │   └── status-stepper.tsx  # Pipeline progress (Triage → Agents → Synthesize)
-│   └── ui/                     # 69 shadcn/Radix UI primitives
+│   └── ui/                     # shadcn/Radix UI primitives
 ├── lib/
-│   ├── supabase.ts             # Direct Supabase client (teams, tasks, papers, stats)
+│   ├── supabase.ts             # Direct Supabase client (teams, tasks, papers, projects, chat_history, stats)
 │   ├── supabase/
 │   │   ├── client.ts           # Browser Supabase client factory
 │   │   ├── server.ts           # Server-side Supabase client factory
 │   │   └── middleware.ts       # Session refresh + auth redirects
 │   ├── swarm-client.ts         # streamResearch, fetchAgents, fetchTasks, cancelTask, scaleAgent
-│   ├── supermemory.ts          # addMemory, searchMemory (user-scoped containers)
+│   ├── supermemory.ts          # addMemory, searchMemory, listAllDocuments (user-scoped containers)
+│   ├── graph-utils.ts          # buildGraphData, graph types (GraphNode, GraphLink, GraphData)
+│   ├── streaming-context.tsx   # React context for sharing streaming state across views
+│   ├── tts-config.ts           # TTS voice configuration for Meeting Room
 │   ├── simulation-data.ts      # Types (AgentStatus, LogEntry, StepperStep) + helpers
 │   └── utils.ts                # cn() — clsx + tailwind-merge
 ├── hooks/
@@ -105,7 +115,7 @@ The dashboard expects `MODAL_ENDPOINT_URL` to point at a deployed Modal app. The
 │   ├── serve_model.py          # Qwen3Model (vLLM, A100-80GB)
 │   ├── config.py               # AGENT_DEFINITIONS, TRIAGE_SYSTEM_PROMPT, model config
 │   ├── db.py                   # Supabase persistence (service role)
-│   ├── schema.sql              # Base database schema
+│   ├── schema.sql              # Base database schema (9 tables)
 │   ├── agents/                 # Agent implementations
 │   │   ├── base.py             # BaseAgent — tool-use loop, events, cancellation
 │   │   ├── paper_collector.py
@@ -122,7 +132,10 @@ The dashboard expects `MODAL_ENDPOINT_URL` to point at a deployed Modal app. The
 ├── scripts/                    # SQL migration scripts (run in order)
 │   ├── 001_add_user_id_to_teams.sql
 │   ├── 002_delete_legacy_user_agnostic_data.sql
-│   └── 003_hide_tasks_with_null_team_from_all.sql
+│   ├── 003_hide_tasks_with_null_team_from_all.sql
+│   ├── 004_create_research_projects.sql
+│   ├── 004_chat_history_and_task_rls.sql
+│   └── 005_chat_history_per_project.sql
 └── docs/                       # This documentation (for agent context)
 ```
 
@@ -145,6 +158,8 @@ The dashboard expects `MODAL_ENDPOINT_URL` to point at a deployed Modal app. The
 | DELETE | `/api/teams/[id]` | Delete team |
 | GET | `/api/memory/status` | Check if Supermemory is enabled |
 | POST | `/api/memory/add` | Save research to Supermemory |
+| GET | `/api/graph` | Build knowledge graph (Supabase + Supermemory semantic edges) |
+| POST | `/api/tts` | Text-to-speech synthesis for Meeting Room |
 
 ### Modal Backend Routes
 
@@ -173,8 +188,11 @@ The dashboard expects `MODAL_ENDPOINT_URL` to point at a deployed Modal app. The
 
 | View | Key Components | Description |
 |------|---------------|-------------|
+| **Projects** | `ProjectsLanding`, `ProjectDetailView` | Create/manage research projects, each scoped to a team with own chat history |
+| **Project Detail** | `ChatInterface`, `PapersView`, `KnowledgeGraphView` | Per-project research console, papers list, and knowledge graph |
 | **Overview** | `AgentStatusGrid`, `ApiMonitor` | Agent cards (idle/busy/error with scaling), API usage metrics |
 | **Research Console** | `ChatInterface`, `StatusStepper` | Query input, SSE streaming, event log, pipeline stepper, team selector, memory context |
+| **Knowledge Graph** | `KnowledgeGraphView` | Force-directed graph of memories, papers, experiments, directions with semantic edges |
 | **Teams** | `TeamsView`, `TeamCard`, `AgentPicker` | Create/edit/delete teams, assign and toggle agents |
 | **Meeting Room** | `MeetingRoom` | Multi-agent discussion with voice synthesis (TTS) |
 | **Credits** | `ApiCreditsView` | API keys, endpoints, token usage, cost tracking |
@@ -183,9 +201,12 @@ The dashboard expects `MODAL_ENDPOINT_URL` to point at a deployed Modal app. The
 
 | File | Exports | Purpose |
 |------|---------|---------|
-| `lib/supabase.ts` | `getTeams`, `createTeam`, `updateTeam`, `deleteTeam`, `getTasksForTeam`, `getEventsForTask`, `getDashboardStats` + TS interfaces | Direct Supabase queries from the client |
+| `lib/supabase.ts` | Teams CRUD, project CRUD, `loadChatHistory`, `saveChatHistory`, `clearChatHistory`, tasks/papers/stats queries + TS interfaces | Direct Supabase queries from the client |
 | `lib/swarm-client.ts` | `streamResearch`, `fetchAgents`, `fetchTasks`, `scaleAgent`, `cancelTask` | Modal API client |
-| `lib/supermemory.ts` | `addMemory`, `searchMemory` | Supermemory SDK wrapper (user-scoped containers) |
+| `lib/supermemory.ts` | `addMemory`, `searchMemories`, `listAllDocuments`, `searchMemoriesWithScore` | Supermemory SDK wrapper (user-scoped containers) |
+| `lib/graph-utils.ts` | `buildGraphData`, `GraphNode`, `GraphLink`, `GraphData` + Supabase/Supermemory types | Knowledge graph data assembly |
+| `lib/streaming-context.tsx` | `StreamingProvider`, `useStreaming` | React context for sharing streaming state (events, active agents) across views |
+| `lib/tts-config.ts` | TTS voice configuration | Voice settings for Meeting Room TTS |
 | `lib/simulation-data.ts` | `AgentStatus`, `LogEntry`, `StepperStep`, color utilities | Types and helpers for dashboard state |
 | `lib/supabase/client.ts` | `createClient` | Browser Supabase client factory |
 | `lib/supabase/server.ts` | `createClient` | Server-side Supabase client factory (cookies) |
