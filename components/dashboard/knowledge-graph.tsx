@@ -84,8 +84,9 @@ export function KnowledgeGraphView({ projectId }: KnowledgeGraphViewProps = {}) 
   const [hoveredNode, setHoveredNode] = useState<GraphNode | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const graphRef = useRef<FGMethods | undefined>(undefined)
-  const [dimensions, setDimensions] = useState({ width: 0, height: 0 })
+  const [dimensions, setDimensions] = useState({ width: 800, height: 600 })
   const hasAutoFit = useRef(false)
+  const wrapperRef = useRef<HTMLDivElement>(null)
 
   const fetchGraph = useCallback(async () => {
     setLoading(true)
@@ -110,16 +111,20 @@ export function KnowledgeGraphView({ projectId }: KnowledgeGraphViewProps = {}) 
     fetchGraph()
   }, [fetchGraph])
 
+  // Measure the outer wrapper (which has a stable size from flex layout)
+  // rather than the inner container (which could collapse when empty)
   useEffect(() => {
-    if (!containerRef.current) return
+    const el = wrapperRef.current
+    if (!el) return
     const measure = () => {
-      if (!containerRef.current) return
-      const { width, height } = containerRef.current.getBoundingClientRect()
-      setDimensions({ width: Math.floor(width), height: Math.floor(height) })
+      const { width, height } = el.getBoundingClientRect()
+      if (width > 0 && height > 0) {
+        setDimensions({ width: Math.floor(width), height: Math.floor(height) })
+      }
     }
     measure()
     const observer = new ResizeObserver(() => measure())
-    observer.observe(containerRef.current)
+    observer.observe(el)
     return () => observer.disconnect()
   }, [])
 
@@ -425,9 +430,9 @@ export function KnowledgeGraphView({ projectId }: KnowledgeGraphViewProps = {}) 
       </div>
 
       {/* Graph + Detail Panel */}
-      <div className="relative flex min-h-0 flex-1 overflow-hidden rounded-md border border-border">
-        <div ref={containerRef} className="relative min-h-0 flex-1">
-          {dimensions.width > 0 && dimensions.height > 0 && (
+      <div ref={wrapperRef} className="relative flex min-h-0 flex-1 overflow-hidden rounded-md border border-border">
+        <div ref={containerRef} className="absolute inset-0">
+          {dimensions.width > 0 && (
             <ForceGraph2D
               ref={graphRef as React.MutableRefObject<FGMethods | undefined>}
               width={selectedNode ? dimensions.width * 0.65 : dimensions.width}
@@ -459,7 +464,7 @@ export function KnowledgeGraphView({ projectId }: KnowledgeGraphViewProps = {}) 
 
         {/* Detail Panel */}
         {selectedNode && (
-          <div className="w-[35%] min-w-[240px] max-w-[360px] border-l border-border bg-card/95 backdrop-blur-sm">
+          <div className="absolute right-0 top-0 z-10 h-full w-[35%] min-w-[240px] max-w-[360px] border-l border-border bg-card/95 backdrop-blur-sm">
             <div className="flex items-center justify-between border-b border-border px-3 py-2">
               <div className="flex items-center gap-2">
                 {(() => {
