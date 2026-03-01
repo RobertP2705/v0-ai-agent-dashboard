@@ -6,8 +6,8 @@ const _geist = Geist({ subsets: ["latin"] });
 const _geistMono = Geist_Mono({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: 'Swarm Lab - AI Agent Research Dashboard',
-  description: 'High-performance dashboard for orchestrating AI agent swarms, managing research meetings, and monitoring API usage.',
+  title: 'Swarm Lab | AI Agent Research Dashboard',
+  description: 'Orchestrate AI agent swarms, manage research meetings with voice synthesis, and monitor multi-agent research pipelines in real-time.',
   generator: 'v0.app',
   icons: {
     icon: [

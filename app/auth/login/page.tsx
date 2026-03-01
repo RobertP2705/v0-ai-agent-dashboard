@@ -60,25 +60,27 @@ export default function LoginPage() {
 
   return (
     <div className="flex min-h-screen w-full items-center justify-center bg-background p-6">
-      <div className="w-full max-w-sm">
+      {/* Subtle background grid */}
+      <div className="pointer-events-none fixed inset-0 bg-[linear-gradient(rgba(255,255,255,0.015)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.015)_1px,transparent_1px)] bg-[size:64px_64px]" />
+      <div className="relative w-full max-w-sm">
         <div className="flex flex-col items-center gap-8">
           {/* Logo */}
-          <div className="flex flex-col items-center gap-3">
-            <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-primary">
-              <Brain className="h-6 w-6 text-primary-foreground" />
+          <div className="flex flex-col items-center gap-4">
+            <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-primary shadow-[0_0_24px_rgba(34,197,94,0.2)]">
+              <Brain className="h-7 w-7 text-primary-foreground" />
             </div>
             <div className="text-center">
-              <h1 className="text-xl font-semibold text-foreground">
+              <h1 className="text-xl font-semibold tracking-tight text-foreground">
                 Swarm Lab
               </h1>
-              <p className="mt-1 font-mono text-xs text-muted-foreground">
+              <p className="mt-1.5 font-mono text-xs text-muted-foreground/70">
                 AI Agent Research Dashboard
               </p>
             </div>
           </div>
 
           {/* Card */}
-          <div className="w-full rounded-lg border border-border bg-card p-6">
+          <div className="w-full rounded-xl border border-border/80 bg-card/80 p-6 shadow-xl shadow-black/20 backdrop-blur-sm">
             <div className="flex flex-col gap-5">
               <div className="text-center">
                 <h2 className="text-sm font-medium text-foreground">
@@ -207,7 +209,7 @@ export default function LoginPage() {
             </div>
           </div>
 
-          <p className="font-mono text-[10px] text-muted-foreground">
+          <p className="font-mono text-[10px] text-muted-foreground/50">
             Authorized personnel only
           </p>
         </div>

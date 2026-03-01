@@ -112,9 +112,9 @@ export function ProjectsLanding({ onSelectProject, projects, setProjects, projec
   if (loading || !projectsLoaded) {
     return (
       <div className="flex h-full items-center justify-center">
-        <div className="flex flex-col items-center gap-3">
-          <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-          <p className="font-mono text-xs text-muted-foreground">
+        <div className="flex flex-col items-center gap-4">
+          <div className="h-7 w-7 animate-spin rounded-full border-2 border-primary/30 border-t-primary" />
+          <p className="font-mono text-xs text-muted-foreground/60">
             Loading projects...
           </p>
         </div>
@@ -126,15 +126,15 @@ export function ProjectsLanding({ onSelectProject, projects, setProjects, projec
   if (projects.length === 0) {
     return (
       <div className="flex h-full items-center justify-center p-4">
-        <div className="flex max-w-md flex-col items-center gap-6 text-center">
-          <div className="flex h-16 w-16 items-center justify-center rounded-2xl border border-border bg-card">
-            <Beaker className="h-8 w-8 text-primary" />
+        <div className="flex max-w-md flex-col items-center gap-8 text-center">
+          <div className="flex h-18 w-18 items-center justify-center rounded-2xl border border-border/60 bg-card shadow-lg shadow-black/10">
+            <Beaker className="h-9 w-9 text-primary" />
           </div>
           <div>
-            <h2 className="text-balance text-lg font-semibold text-foreground">
+            <h2 className="text-balance text-lg font-semibold tracking-tight text-foreground">
               Create your first research project
             </h2>
-            <p className="mt-2 text-pretty font-mono text-xs text-muted-foreground">
+            <p className="mt-2.5 text-pretty font-mono text-xs leading-relaxed text-muted-foreground">
               Projects organize your research tasks, papers, and teams in one
               place. Create a project to get started with your AI research swarm.
             </p>
@@ -164,13 +164,13 @@ export function ProjectsLanding({ onSelectProject, projects, setProjects, projec
   }
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-5">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-sm font-semibold text-foreground">
+          <h2 className="text-sm font-semibold tracking-tight text-foreground">
             Research Projects
           </h2>
-          <p className="font-mono text-[10px] text-muted-foreground">
+          <p className="mt-0.5 font-mono text-[10px] text-muted-foreground/70">
             {projects.length} project{projects.length !== 1 ? "s" : ""}
           </p>
         </div>
@@ -220,21 +220,21 @@ function ProjectCard({
 }) {
   return (
     <Card
-      className="group cursor-pointer border-border bg-card/80 backdrop-blur-sm transition-colors hover:border-primary/40"
+      className="group cursor-pointer border-border/80 bg-card/60 backdrop-blur-sm transition-all duration-200 hover:border-primary/30 hover:bg-card/80 hover:shadow-lg hover:shadow-primary/5"
       onClick={() => onSelect(project)}
     >
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-        <div className="flex items-center gap-2">
-          <div className="flex h-7 w-7 items-center justify-center rounded-md bg-primary/10">
-            <FolderOpen className="h-3.5 w-3.5 text-primary" />
+        <div className="flex items-center gap-2.5">
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10">
+            <FolderOpen className="h-4 w-4 text-primary" />
           </div>
-          <CardTitle className="text-sm font-medium">{project.name}</CardTitle>
+          <CardTitle className="text-sm font-medium tracking-tight">{project.name}</CardTitle>
         </div>
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1.5">
           <Button
             size="sm"
             variant="ghost"
-            className="h-7 w-7 p-0 opacity-0 group-hover:opacity-100"
+            className="h-7 w-7 p-0 opacity-0 transition-opacity group-hover:opacity-100"
             onClick={(e) => {
               e.stopPropagation()
               onDelete(project.id)
@@ -242,12 +242,12 @@ function ProjectCard({
           >
             <Trash2 className="h-3.5 w-3.5 text-destructive" />
           </Button>
-          <ArrowRight className="h-3.5 w-3.5 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
+          <ArrowRight className="h-3.5 w-3.5 text-muted-foreground/50 transition-all group-hover:translate-x-0.5 group-hover:text-primary group-hover:opacity-100 opacity-0" />
         </div>
       </CardHeader>
       <CardContent className="space-y-3">
         {project.description && (
-          <p className="font-mono text-[10px] text-muted-foreground line-clamp-2">
+          <p className="font-mono text-[10px] leading-relaxed text-muted-foreground/80 line-clamp-2">
             {project.description}
           </p>
         )}
@@ -273,8 +273,8 @@ function ProjectCard({
             </Badge>
           )}
         </div>
-        <div className="flex items-center justify-between">
-          <span className="font-mono text-[10px] text-muted-foreground">
+        <div className="flex items-center justify-between border-t border-border/50 pt-2.5">
+          <span className="font-mono text-[10px] text-muted-foreground/60">
             Updated{" "}
             {new Date(project.updated_at).toLocaleDateString()}
           </span>

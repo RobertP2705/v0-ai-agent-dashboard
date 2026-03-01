@@ -42,7 +42,7 @@ export function ApiMonitor({ projectId, teamId }: ApiMonitorProps = {}) {
 
   if (!supabaseConfigured || !stats) {
     return (
-      <Card className="border-border bg-card/80 backdrop-blur-sm">
+      <Card className="border-border/80 bg-card/60 backdrop-blur-sm">
         <CardHeader className="pb-2">
           <CardTitle className="flex items-center gap-2 text-sm font-medium">
             <Zap className="h-3.5 w-3.5 text-warning" />
@@ -50,7 +50,7 @@ export function ApiMonitor({ projectId, teamId }: ApiMonitorProps = {}) {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <p className="py-4 text-center font-mono text-xs text-muted-foreground">
+          <p className="py-4 text-center font-mono text-xs text-muted-foreground/70">
             {supabaseConfigured
               ? "Loading metrics..."
               : "Connect Supabase to see real metrics."}
@@ -63,7 +63,7 @@ export function ApiMonitor({ projectId, teamId }: ApiMonitorProps = {}) {
   const estimatedCost = stats.totalTokens * COST_PER_TOKEN
 
   return (
-    <Card className="border-border bg-card/80 backdrop-blur-sm">
+    <Card className="border-border/80 bg-card/60 backdrop-blur-sm">
       <CardHeader className="pb-2">
         <div className="flex items-center justify-between gap-2">
           <CardTitle className="flex items-center gap-2 text-sm font-medium">
@@ -71,7 +71,7 @@ export function ApiMonitor({ projectId, teamId }: ApiMonitorProps = {}) {
             API Monitor
           </CardTitle>
           <Badge variant="outline" className="border-success/30 bg-success/10 font-mono text-[9px] text-success">
-            ✓ Real data from Supabase
+            Live data
           </Badge>
         </div>
       </CardHeader>

@@ -140,10 +140,13 @@ export function AgentStatusGrid({ projectId, teamId }: AgentStatusGridProps = {}
   return (
     <div className="space-y-3">
       {agents.length === 0 ? (
-        <div className="flex items-center justify-center rounded-md border border-dashed border-muted-foreground/30 bg-muted/30 px-4 py-8">
-          <Badge variant="outline" className="font-mono text-[10px] text-muted-foreground">
-            TODO: Configure MODAL_ENDPOINT_URL to display agent status
-          </Badge>
+        <div className="flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-border/60 bg-card/30 px-4 py-10">
+          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-secondary/50">
+            <Users className="h-5 w-5 text-muted-foreground/40" />
+          </div>
+          <p className="font-mono text-xs text-muted-foreground/60">
+            Configure MODAL_ENDPOINT_URL to display agent status
+          </p>
         </div>
       ) : (
         <>
@@ -156,7 +159,7 @@ export function AgentStatusGrid({ projectId, teamId }: AgentStatusGridProps = {}
                 isDisabled ? "idle" :
                 isStreaming && activeAgents.includes(agent.id) ? "busy" : agent.status
               return (
-                <Card key={agent.id} className={cn("border-border bg-card/80 backdrop-blur-sm", isDisabled && "opacity-50")}>
+                <Card key={agent.id} className={cn("border-border/80 bg-card/60 backdrop-blur-sm transition-all duration-200", isDisabled && "opacity-40", effectiveStatus === "busy" && "border-success/20")}>
                   <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 space-y-0 pb-2">
                     <div className="flex min-w-0 items-center gap-2">
                       <div className="flex h-7 w-7 items-center justify-center rounded-md bg-secondary">

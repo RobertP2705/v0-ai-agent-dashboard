@@ -46,15 +46,15 @@ export function TeamCard({ team, onSelect, onDelete }: TeamCardProps) {
 
   return (
     <Card
-      className="group cursor-pointer border-border bg-card/80 backdrop-blur-sm transition-colors hover:border-primary/40"
+      className="group cursor-pointer border-border/80 bg-card/60 backdrop-blur-sm transition-all duration-200 hover:border-primary/30 hover:bg-card/80 hover:shadow-lg hover:shadow-primary/5"
       onClick={() => onSelect(team)}
     >
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-        <div className="flex items-center gap-2">
-          <div className="flex h-7 w-7 items-center justify-center rounded-md bg-primary/10">
-            <Users className="h-3.5 w-3.5 text-primary" />
+        <div className="flex items-center gap-2.5">
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10">
+            <Users className="h-4 w-4 text-primary" />
           </div>
-          <CardTitle className="text-sm font-medium">{team.name}</CardTitle>
+          <CardTitle className="text-sm font-medium tracking-tight">{team.name}</CardTitle>
         </div>
         <Button
           size="sm"

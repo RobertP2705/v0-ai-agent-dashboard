@@ -1078,12 +1078,12 @@ export function ChatInterface({ fullscreen = false, projectId, teamId }: ChatInt
   )
 
   const inputBar = (
-    <form onSubmit={handleSubmit} className="flex items-center gap-2 border-t border-border p-3">
+    <form onSubmit={handleSubmit} className="flex items-center gap-2 border-t border-border/80 bg-card/30 p-3">
       {messages.length > 0 && !isSubmitting && (
         <button
           type="button"
           onClick={handleClearHistory}
-          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border bg-secondary text-muted-foreground transition-colors hover:bg-destructive/20 hover:text-destructive"
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-border/80 bg-secondary/50 text-muted-foreground/60 transition-all duration-150 hover:bg-destructive/15 hover:text-destructive hover:border-destructive/30"
           title="Clear chat history"
         >
           <Trash2 className="h-3.5 w-3.5" />
@@ -1092,14 +1092,14 @@ export function ChatInterface({ fullscreen = false, projectId, teamId }: ChatInt
       <input
         type="text" value={inputValue} onChange={(e) => setInputValue(e.target.value)}
         placeholder="Send a research query to the swarm..."
-        className="flex-1 rounded-md border border-border bg-secondary px-3 py-2 font-mono text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+        className="flex-1 rounded-lg border border-border/80 bg-secondary/50 px-3.5 py-2.5 font-mono text-xs text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/40 transition-all"
       />
       {isSubmitting ? (
-        <button type="button" onClick={handleCancel} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-destructive text-destructive-foreground transition-colors hover:bg-destructive/80" title="Stop task">
+        <button type="button" onClick={handleCancel} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-destructive text-destructive-foreground transition-all duration-150 hover:bg-destructive/80" title="Stop task">
           <Square className="h-3.5 w-3.5" />
         </button>
       ) : (
-        <button type="submit" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground transition-colors hover:bg-primary/80 disabled:opacity-50">
+        <button type="submit" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground shadow-sm shadow-primary/20 transition-all duration-150 hover:bg-primary/80 disabled:opacity-50">
           <Send className="h-3.5 w-3.5" />
         </button>
       )}
@@ -1128,8 +1128,8 @@ export function ChatInterface({ fullscreen = false, projectId, teamId }: ChatInt
 
   if (fullscreen) {
     return (
-      <div className="flex h-full flex-col rounded-lg border border-border bg-card/80 backdrop-blur-sm">
-        {/* ── Top bar ─────────────────────────────────── */}
+      <div className="flex h-full flex-col rounded-xl border border-border/80 bg-card/60 backdrop-blur-sm shadow-sm">
+        {/* ── Top bar ───────────────────────��─────────── */}
         <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-2">
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-2">
@@ -1176,7 +1176,7 @@ export function ChatInterface({ fullscreen = false, projectId, teamId }: ChatInt
   }
 
   return (
-    <Card className="flex h-full flex-col border-border bg-card/80 backdrop-blur-sm">
+    <Card className="flex h-full flex-col border-border/80 bg-card/60 backdrop-blur-sm">
       <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 border-b border-border pb-3 sm:gap-3">
         <CardTitle className="flex items-center gap-2 text-sm font-medium">
           <Brain className="h-3.5 w-3.5 text-primary" />

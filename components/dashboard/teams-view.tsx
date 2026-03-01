@@ -157,15 +157,15 @@ export function TeamsView() {
           </div>
         </div>
 
-        <Card className="border-border bg-card/80 backdrop-blur-sm">
+        <Card className="border-border/80 bg-card/60 backdrop-blur-sm">
           <CardHeader className="pb-2">
             <div className="flex items-center justify-between">
               <CardTitle className="text-sm font-medium">Agent Configuration</CardTitle>
-              <Badge variant="outline" className="font-mono text-[10px]">
+              <Badge variant="outline" className="font-mono text-[10px] border-primary/30 bg-primary/5 text-primary">
                 {totalEnabled} agent{totalEnabled !== 1 ? "s" : ""} active
               </Badge>
             </div>
-            <p className="font-mono text-[10px] text-muted-foreground">
+            <p className="font-mono text-[10px] text-muted-foreground/70">
               Set the number of instances for each agent type. Use 0 to exclude an agent.
             </p>
           </CardHeader>
@@ -181,8 +181,8 @@ export function TeamsView() {
                   <div
                     key={agent.id}
                     className={cn(
-                      "flex items-center gap-3 rounded-md border border-border px-3 py-3 transition-opacity",
-                      isDisabled ? "bg-muted/30 opacity-50" : "bg-secondary/30"
+                      "flex items-center gap-3 rounded-lg border px-3 py-3 transition-all duration-200",
+                      isDisabled ? "border-border/40 bg-muted/20 opacity-40" : "border-border/80 bg-secondary/20"
                     )}
                   >
                     <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-secondary">
@@ -241,8 +241,8 @@ export function TeamsView() {
     <div className="flex h-full flex-col gap-4">
       <div className="flex items-center justify-between">
         <div>
-          <h3 className="text-sm font-semibold text-foreground">Research Teams</h3>
-          <p className="font-mono text-[10px] text-muted-foreground">
+            <h3 className="text-sm font-semibold tracking-tight text-foreground">Research Teams</h3>
+            <p className="mt-0.5 font-mono text-[10px] text-muted-foreground/70">
             Create teams and assign specialized agents
           </p>
         </div>
@@ -296,9 +296,11 @@ export function TeamsView() {
           Loading teams...
         </p>
       ) : teams.length === 0 ? (
-        <div className="flex flex-1 flex-col items-center justify-center gap-3">
-          <Users className="h-10 w-10 text-muted-foreground/30" />
-          <p className="font-mono text-xs text-muted-foreground">
+        <div className="flex flex-1 flex-col items-center justify-center gap-4 py-16">
+          <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-border/60 bg-card">
+            <Users className="h-7 w-7 text-muted-foreground/30" />
+          </div>
+          <p className="font-mono text-xs text-muted-foreground/70">
             No teams yet. Create one to get started.
           </p>
         </div>
