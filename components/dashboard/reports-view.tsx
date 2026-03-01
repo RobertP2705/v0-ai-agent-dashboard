@@ -5,7 +5,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Button } from "@/components/ui/button"
 import { FileText, Download, Calendar, Loader2, FlaskConical } from "lucide-react"
-import { supabaseConfigured, fetchReportsForProject, type TaskReport } from "@/lib/supabase"
+import { supabaseConfigured, type TaskReport } from "@/lib/supabase"
 
 function formatDate(dateStr: string): string {
   return new Date(dateStr).toLocaleDateString("en-US", {
@@ -70,8 +70,9 @@ export function ReportsView({ projectId, teamId }: ReportsViewProps) {
   const loadReports = useCallback(async () => {
     setLoading(true)
     try {
-      const data = await fetchReportsForProject(projectId, 50)
-      setReports(data)
+      const res = await fetch(`/api/swarm/projects/${encodeURIComponent(projectId)}/reports`)
+      const data = await res.json().catch(() => [])
+      setReports(Array.isArray(data) ? data : [])
     } catch {
       setReports([])
     } finally {

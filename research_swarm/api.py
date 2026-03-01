@@ -371,6 +371,12 @@ async def get_task_events_endpoint(task_id: str):
     return db.list_events(task_id)
 
 
+@web_app.get("/research/projects/{project_id}/reports")
+async def get_project_reports_endpoint(project_id: str, limit: int = 50):
+    """List PDF reports for this project (service role, bypasses RLS so test reports show)."""
+    return db.list_task_reports_for_project(project_id, limit=limit)
+
+
 # ── Meeting summary ────────────────────────────────────────────────────────
 
 class SummarizeMeetingRequest(BaseModel):

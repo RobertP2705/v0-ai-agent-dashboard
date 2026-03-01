@@ -259,3 +259,20 @@ def list_task_reports(task_id: str | None = None, limit: int = 50) -> list[dict]
     if task_id:
         q = q.eq("task_id", task_id)
     return q.execute().data
+
+
+def list_task_reports_for_project(project_id: str, limit: int = 50) -> list[dict]:
+    """List task_reports for all tasks in this project (service role, bypasses RLS)."""
+    sb = _get_client()
+    tasks = sb.table("tasks").select("id").eq("project_id", project_id).execute().data
+    task_ids = [t["id"] for t in tasks] if tasks else []
+    if not task_ids:
+        return []
+    q = (
+        sb.table("task_reports")
+        .select("*")
+        .in_("task_id", task_ids)
+        .order("created_at", desc=True)
+        .limit(limit)
+    )
+    return q.execute().data
