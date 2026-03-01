@@ -181,6 +181,8 @@ class BaseAgent:
         tool_schemas = self._build_tool_schemas()
         no_tool_call_nudges = 0  # for implementer: allow several nudges before accepting text-only answer
         last_sandbox_failed = False  # implementer: avoid stopping right after a failed sandbox
+        self._last_sandbox_stdout: str = ""
+        self._last_sandbox_stderr: str = ""
 
         yield self._emit("thought", f"Starting task: {task}")
 
@@ -255,6 +257,12 @@ class BaseAgent:
                     messages.append({"role": "user", "content": nudge})
                     continue
                 answer = content or ""
+                if self.agent_id == "implementer" and (self._last_sandbox_stdout or self._last_sandbox_stderr):
+                    answer += "\n\n--- Sandbox output ---\n"
+                    if self._last_sandbox_stdout:
+                        answer += "stdout:\n" + self._last_sandbox_stdout[:4000] + "\n"
+                    if self._last_sandbox_stderr:
+                        answer += "stderr:\n" + self._last_sandbox_stderr[:2000]
                 yield self._emit("result", answer)
                 return AgentResult(
                     agent_id=self.agent_id,
@@ -313,26 +321,23 @@ class BaseAgent:
                     parsed = json.loads(tool_result)
                     if fn_name == "modal_sandbox" and isinstance(parsed, dict):
                         result_meta["exit_code"] = parsed.get("exit_code")
-                        result_meta["stdout"] = parsed.get("stdout", "")[:2000]
-                        result_meta["stderr"] = parsed.get("stderr", "")[:1000]
+                        result_meta["stdout"] = parsed.get("stdout", "")
+                        result_meta["stderr"] = parsed.get("stderr", "")
                 except (json.JSONDecodeError, TypeError):
                     pass
                 if fn_name == "modal_sandbox" and "exit_code" in result_meta:
                     ec = result_meta["exit_code"]
                     stdout_text = result_meta.get("stdout", "")
                     stderr_text = result_meta.get("stderr", "")
+                    self._last_sandbox_stdout = stdout_text
+                    self._last_sandbox_stderr = stderr_text
                     last_sandbox_failed = ec != 0
-                    if ec == 0:
-                        preview = stdout_text.strip()[:120]
-                        msg = f"modal_sandbox returned ({len(tool_result)} chars)"
-                        if preview:
-                            msg += f" — {preview}{'…' if len(stdout_text.strip()) > 120 else ''}"
-                    else:
-                        preview = (stderr_text or stdout_text).strip()[:120]
-                        msg = f"modal_sandbox failed (exit {ec})"
-                        if preview:
-                            msg += f" — {preview}{'…' if len((stderr_text or stdout_text).strip()) > 120 else ''}"
-                    yield self._emit("result", msg, **result_meta)
+                    # Print full stdout/stderr to chat (so user and UI see it)
+                    out_block = (stdout_text.strip() or "(no stdout)")[:8000]
+                    err_block = (stderr_text.strip() or "(no stderr)")[:4000]
+                    chat_out = f"=== SANDBOX STDOUT ===\n{out_block}\n=== SANDBOX STDERR ===\n{err_block}"
+                    yield self._emit("thought", chat_out)
+                    yield self._emit("result", f"modal_sandbox exit {ec}. See output above.", **result_meta)
                 else:
                     yield self._emit("result", f"{fn_name} returned ({len(tool_result)} chars)", **result_meta)
 
@@ -342,11 +347,18 @@ class BaseAgent:
                     "content": tool_result,
                 })
 
+        answer = "Max iterations reached."
+        if self.agent_id == "implementer" and (self._last_sandbox_stdout or self._last_sandbox_stderr):
+            answer += "\n\n--- Last sandbox output ---\n"
+            if self._last_sandbox_stdout:
+                answer += "stdout:\n" + self._last_sandbox_stdout[:4000] + "\n"
+            if self._last_sandbox_stderr:
+                answer += "stderr:\n" + self._last_sandbox_stderr[:2000]
         yield self._emit("error", "Max iterations reached without final answer")
         return AgentResult(
             agent_id=self.agent_id,
             agent_name=self.agent_name,
-            answer="Max iterations reached.",
+            answer=answer,
             events=[],
             usage=self._total_usage.copy(),
         )
