@@ -119,7 +119,9 @@ def run_research(
                 with results_lock:
                     agent_results[label] = result
                 if agent_id == "research-director" and result.answer:
-                    _save_direction(task_id, result.answer)
+                    _save_direction(task_id, result.answer, title_prefix="Research direction")
+                if agent_id == "implementer" and result.answer:
+                    _save_direction(task_id, result.answer, title_prefix="Implementer / Sandbox result")
         except CancelledError:
             event_q.put(_event(task_id, label, "error", "Cancelled by user"))
         except Exception as exc:
@@ -390,25 +392,18 @@ def _merge_results(
     return response.get("content", "")
 
 
-def _save_direction(task_id: str, answer: str):
-    """Extract and persist a research direction from the research director's output."""
+def _save_direction(task_id: str, answer: str, title_prefix: str = "Research direction"):
+    """Extract and persist a research direction or implementer result for the task."""
     try:
         title = answer.split("\n")[0][:200].strip("# ").strip()
         if not title:
-            title = "Research direction"
-
-        related_paper_ids: list[str] = []
-        try:
-            task_papers = db.list_papers(task_id=task_id, limit=50)
-            related_paper_ids = [p["id"] for p in task_papers if p.get("id")]
-        except Exception:
-            pass
-
+            title = title_prefix
+        else:
+            title = f"{title_prefix}: {title}" if title_prefix != "Research direction" else title
         db.insert_direction(
             task_id=task_id,
-            title=title,
-            rationale=answer[:2000],
-            related_papers=related_paper_ids,
+            title=title[:200],
+            rationale=answer[:4000],
         )
     except Exception:
         pass
