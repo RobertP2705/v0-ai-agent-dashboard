@@ -97,7 +97,7 @@ export default function SignUpPage() {
                 Create Account
               </h1>
               <p className="mt-1.5 font-mono text-xs text-muted-foreground/70">
-                Get started with Swarm Lab
+                Get started with Magi Swam
               </p>
             </div>
           </div>
