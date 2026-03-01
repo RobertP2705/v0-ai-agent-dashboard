@@ -22,17 +22,32 @@ def list_tasks(limit: int = 20) -> list[dict]:
     return db.list_tasks(limit=limit)
 
 
+def _agent_result_from_resume(label: str, data: dict) -> AgentResult:
+    """Build AgentResult from resume_context entry."""
+    return AgentResult(
+        agent_id=data.get("agent_id", ""),
+        agent_name=label,
+        answer=data.get("answer", "") or "",
+        events=[],
+        usage=data.get("usage") or {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+    )
+
+
 def run_research(
     query: str,
     model_remote: Any,
     team_id: str | None = None,
     project_id: str | None = None,
     memory_context: list[dict] | None = None,
+    existing_task_id: str | None = None,
 ) -> Generator[dict, None, dict]:
     """Full orchestration pipeline: triage -> parallel fan-out -> merge.
 
     Yields event dicts as they happen for SSE streaming.
     All state is persisted to Supabase.
+
+    If existing_task_id is set, uses that task (loads query/team_id/project_id from DB).
+    If the task has resume_phase >= 1 and resume_context, resumes from that phase.
     """
     if memory_context:
         context_block = "\n\n".join(
@@ -46,14 +61,30 @@ def run_research(
     else:
         augmented_query = query
 
-    try:
-        task_row = db.create_task(query=query, team_id=team_id, project_id=project_id)
-    except Exception as exc:
-        yield _event("none", "system", "error",
-                      f"Database error creating task: {exc}")
-        return {}
+    task_id: str
+    resume_phase: int = 0
+    resume_context: dict | None = None
 
-    task_id = task_row["id"]
+    if existing_task_id:
+        task_row = db.get_task(existing_task_id)
+        if not task_row:
+            yield _event("none", "system", "error", f"Task not found: {existing_task_id}")
+            return {}
+        task_id = task_row["id"]
+        query = task_row.get("query") or query
+        team_id = task_row.get("team_id") or team_id
+        project_id = task_row.get("project_id") or project_id
+        resume_phase = int(task_row.get("resume_phase") or 0)
+        rc = task_row.get("resume_context")
+        resume_context = rc if isinstance(rc, dict) else None
+    else:
+        try:
+            task_row = db.create_task(query=query, team_id=team_id, project_id=project_id)
+        except Exception as exc:
+            yield _event("none", "system", "error",
+                        f"Database error creating task: {exc}")
+            return {}
+        task_id = task_row["id"]
 
     db.update_task(task_id, {"status": "triaging"})
     yield _event(task_id, "system", "thought", f"Received query: {query}")
@@ -66,41 +97,53 @@ def run_research(
         db.update_task(task_id, {"status": "error"})
         return db.get_task(task_id) or {}
 
-    counts_str = ", ".join(f"{a} x{c}" for a, c in agent_counts.items())
-    yield _event(task_id, "system", "action", f"Routing query to model ({counts_str})...")
-
-    try:
-        routing = _triage(augmented_query, model_remote, agent_counts)
-    except Exception as exc:
-        msg = str(exc)
-        # If Modal couldn't deserialize the remote exception, the message often contains "remote traceback"
-        if "remote traceback" in msg.lower() or "deserialization failed" in msg.lower():
-            msg = (
-                "Model server error (vLLM engine may have crashed or OOM). "
-                "Check Modal logs for the remote traceback. "
-                "Original: " + msg[:500]
-            )
-        yield _event(task_id, "system", "error", f"Triage failed: {msg}")
-        db.update_task(task_id, {"status": "error"})
-        return db.get_task(task_id) or {}
-
-    roster = _build_roster(routing, agent_counts, augmented_query)
-
-    all_agent_ids = list({agent_id for agent_id, _, _ in roster})
-    db.update_task(task_id, {
-        "status": "running",
-        "assigned_agents": all_agent_ids,
-    })
-
-    # Phase 1: collectors (paper-collector, research-director). Phase 2: implementer and pdf-agent run after with their results.
     PHASE1_AGENTS = {"paper-collector", "research-director"}
     PHASE2_AGENTS = {"implementer", "pdf-agent"}
-    phase1_roster = [(aid, label, st) for aid, label, st in roster if aid in PHASE1_AGENTS]
-    phase2_roster = [(aid, label, st) for aid, label, st in roster if aid in PHASE2_AGENTS]
-
     event_q: queue.Queue[dict | None] = queue.Queue()
     agent_results: dict[str, AgentResult] = {}
     results_lock = threading.Lock()
+    roster: list[tuple[str, str, str]] = []
+    phase1_roster: list[tuple[str, str, str]] = []
+    phase2_roster: list[tuple[str, str, str]] = []
+
+    if resume_phase >= 1 and resume_context:
+        # Resume from checkpoint: restore agent_results and roster info, skip triage and phase 1
+        yield _event(task_id, "system", "action", "Resuming from previous checkpoint...")
+        ar_data = resume_context.get("agent_results") or {}
+        for label, data in ar_data.items():
+            if isinstance(data, dict):
+                agent_results[label] = _agent_result_from_resume(label, data)
+        phase1_roster = [tuple(x) for x in resume_context.get("phase1_roster") or []]
+        phase2_roster = [tuple(x) for x in resume_context.get("phase2_roster") or []]
+        # phase1_roster / phase2_roster stored as [agent_id, label]; we need (agent_id, label, sub_task)
+        # Rebuild 3-tuples with empty sub_task for phase2 (we rebuild phase2 sub_tasks below)
+        phase1_roster = [(r[0], r[1], "") for r in phase1_roster if len(r) >= 2]
+        phase2_roster = [(r[0], r[1], "") for r in phase2_roster if len(r) >= 2]
+        all_agent_ids = list({aid for aid, _, _ in phase1_roster + phase2_roster})
+        db.update_task(task_id, {"status": "running", "assigned_agents": all_agent_ids or list(agent_counts.keys())})
+    else:
+        counts_str = ", ".join(f"{a} x{c}" for a, c in agent_counts.items())
+        yield _event(task_id, "system", "action", f"Routing query to model ({counts_str})...")
+
+        try:
+            routing = _triage(augmented_query, model_remote, agent_counts)
+        except Exception as exc:
+            msg = str(exc)
+            if "remote traceback" in msg.lower() or "deserialization failed" in msg.lower():
+                msg = (
+                    "Model server error (vLLM engine may have crashed or OOM). "
+                    "Check Modal logs for the remote traceback. "
+                    "Original: " + msg[:500]
+                )
+            yield _event(task_id, "system", "error", f"Triage failed: {msg}")
+            db.update_task(task_id, {"status": "error"})
+            return db.get_task(task_id) or {}
+
+        roster = _build_roster(routing, agent_counts, augmented_query)
+        all_agent_ids = list({agent_id for agent_id, _, _ in roster})
+        db.update_task(task_id, {"status": "running", "assigned_agents": all_agent_ids})
+        phase1_roster = [(aid, label, st) for aid, label, st in roster if aid in PHASE1_AGENTS]
+        phase2_roster = [(aid, label, st) for aid, label, st in roster if aid in PHASE2_AGENTS]
 
     def _run_agent(agent_id: str, label: str, sub_task: str):
         agent_cls = AGENT_CLASSES.get(agent_id)
@@ -133,8 +176,8 @@ def run_research(
         except Exception as exc:
             event_q.put(_event(task_id, label, "error", f"Agent failed: {exc}"))
 
-    # ── Phase 1: Run collectors first ─────────────────────────────────────
-    if phase1_roster:
+    # ── Phase 1: Run collectors first (skip when resuming from checkpoint) ───
+    if phase1_roster and not (resume_phase >= 1 and resume_context):
         labels1 = [label for _, label, _ in phase1_roster]
         yield _event(task_id, "system", "action", f"Phase 1 — Research: {', '.join(labels1)}")
         threads = []
@@ -156,14 +199,30 @@ def run_research(
         while not event_q.empty():
             yield event_q.get()
 
+        # Checkpoint after phase 1 so we can resume after timeout
+        collector_parts = [f"## {label}\n{result.answer}" for label, result in agent_results.items()]
+        _collector_summary = "\n\n".join(collector_parts)
+        resume_payload = {
+            "collector_summary": _collector_summary,
+            "agent_results": {
+                label: {"agent_id": r.agent_id, "answer": r.answer, "usage": r.usage}
+                for label, r in agent_results.items()
+            },
+            "phase1_roster": [[aid, label] for aid, label, _ in phase1_roster],
+            "phase2_roster": [[aid, label] for aid, label, _ in phase2_roster],
+        }
+        db.update_task(task_id, {"resume_phase": 1, "resume_context": resume_payload})
+
     # Research context for implementer (so it does not call URLs first)
     collector_summary = ""
-    if phase1_roster and agent_results:
+    if resume_phase >= 1 and resume_context and resume_context.get("collector_summary"):
+        collector_summary = resume_context["collector_summary"]
+    elif phase1_roster and agent_results:
         parts = [f"## {label}\n{result.answer}" for label, result in agent_results.items()]
         collector_summary = "\n\n".join(parts)
 
-    # ── Phase 2: Implementer and PDF agent with research context ──
-    if phase2_roster:
+    # ── Phase 2: Implementer and PDF agent with research context (skip when resume_phase >= 2) ──
+    if phase2_roster and not (resume_phase >= 2 and resume_context):
         impl_instruction = (
             "Use the research context below. Do NOT call fetch_url or web_search first — "
             "repo URLs and info are already in the context. "
@@ -218,10 +277,23 @@ def run_research(
         while not event_q.empty():
             yield event_q.get()
 
+        # Checkpoint after phase 2 for resume
+        resume_payload2 = {
+            "collector_summary": collector_summary,
+            "agent_results": {
+                label: {"agent_id": r.agent_id, "answer": r.answer, "usage": r.usage}
+                for label, r in agent_results.items()
+            },
+            "phase1_roster": [[aid, label] for aid, label, _ in phase1_roster],
+            "phase2_roster": [[aid, label] for aid, label, _ in phase2_roster],
+        }
+        db.update_task(task_id, {"resume_phase": 2, "resume_context": resume_payload2})
+
     # ── Phase 3: Route sandbox stdout back to research-director ─────────
     impl_sandbox_parts = []
+    roster_for_impl = roster if roster else phase2_roster
     for label, r in agent_results.items():
-        if any(aid == "implementer" and l == label for aid, l, _ in roster):
+        if any(aid == "implementer" and l == label for aid, l, _ in roster_for_impl):
             if r.answer:
                 impl_sandbox_parts.append(f"## {label}\n{r.answer}")
 
@@ -275,6 +347,8 @@ def run_research(
         "status": "completed",
         "merged_answer": merged,
         "total_usage": usage,
+        "resume_phase": 0,
+        "resume_context": None,
     })
 
     yield _event(task_id, "system", "result", merged)

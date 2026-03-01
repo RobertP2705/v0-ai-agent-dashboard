@@ -17,7 +17,7 @@ export interface SwarmAgent {
 export interface SwarmEvent {
   task_id: string
   agent: string
-  type: "thought" | "action" | "result" | "error" | "done"
+  type: "thought" | "action" | "result" | "error" | "done" | "timeout_continue"
   message: string
   timestamp: number
   meta?: Record<string, unknown>
@@ -71,13 +71,21 @@ export function streamResearch(
   onError: (error: Error) => void,
   teamId?: string,
   projectId?: string,
+  continueTaskId?: string,
 ): AbortController {
   const controller = new AbortController()
+
+  const body: Record<string, unknown> = {
+    query,
+    team_id: teamId,
+    project_id: projectId,
+  }
+  if (continueTaskId) body.continue_task_id = continueTaskId
 
   fetch("/api/swarm/stream", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ query, team_id: teamId, project_id: projectId }),
+    body: JSON.stringify(body),
     signal: controller.signal,
   })
     .then(async (res) => {

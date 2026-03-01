@@ -87,7 +87,7 @@ function swarmEventToLog(event: SwarmEvent): LogEntry {
     id: `ev-${event.timestamp}-${Math.random().toString(36).slice(2, 8)}`,
     timestamp: formatTime(event.timestamp),
     agent: event.agent,
-    type: event.type === "done" ? "result" : event.type,
+    type: event.type === "done" ? "result" : event.type === "timeout_continue" ? "action" : event.type,
     message: event.message,
     meta: event.meta,
   }
@@ -956,19 +956,51 @@ export function ChatInterface({ fullscreen = false, projectId, teamId }: ChatInt
     activeTaskMsgIdRef.current = taskMsg.id
     activeAgentsRef.current = new Set()
     setStreamingState({ isStreaming: true, activeAgents: [] })
-    abortRef.current = streamResearch(
-      query,
-      (event) => {
-        if (event.task_id) activeTaskIdRef.current = event.task_id
-        const log = swarmEventToLog(event)
-        // Update streaming context outside of setState to avoid side-effects in updater
-        if (event.agent && event.agent !== "system" && event.agent !== "User") {
-          const id = event.agent.replace(/ #\d+$/, "").toLowerCase().replace(/\s+/g, "-")
-          if (!activeAgentsRef.current.has(id)) {
-            activeAgentsRef.current.add(id)
-            setStreamingState({ isStreaming: true, activeAgents: [...activeAgentsRef.current] })
-          }
-        }
+    const onDone = () => {
+      activeTaskIdRef.current = null
+      activeTaskMsgIdRef.current = null
+      setStreamStartTime(null)
+      activeAgentsRef.current = new Set()
+      setStreamingState({ isStreaming: false, activeAgents: [] })
+      setMessages((prev) => {
+        const updated = [...prev]
+        const idx = updated.findIndex((m) => m.id === taskMsg.id)
+        if (idx === -1) return prev
+        const msg = updated[idx]
+        const hasResult = msg.events.some((e) => e.type === "result")
+        const hasError = msg.events.some((e) => e.type === "error")
+        const finalStatus = hasResult ? "completed" : hasError ? "error" : "completed"
+        const summary = finalStatus === "error" && !hasResult
+          ? msg.events.filter((e) => e.type === "error").map((e) => e.message).join("; ")
+          : msg.summary
+        updated[idx] = { ...updated[idx], status: finalStatus, summary }
+        return updated
+      })
+      setIsSubmitting(false)
+    }
+
+    const onError = (err: Error) => {
+      if (err.name === "AbortError") return
+      activeTaskIdRef.current = null
+      activeTaskMsgIdRef.current = null
+      setStreamStartTime(null)
+      activeAgentsRef.current = new Set()
+      setStreamingState({ isStreaming: false, activeAgents: [] })
+      setMessages((prev) => {
+        const updated = [...prev]
+        const idx = updated.findIndex((m) => m.id === taskMsg.id)
+        if (idx === -1) return prev
+        updated[idx] = { ...updated[idx], status: "error", summary: `Error: ${err.message}` }
+        return updated
+      })
+      setIsSubmitting(false)
+    }
+
+    const onEvent = (event: SwarmEvent) => {
+      if (event.task_id) activeTaskIdRef.current = event.task_id
+      const log = swarmEventToLog(event)
+      if (event.type === "timeout_continue" && event.task_id) {
+        abortRef.current?.abort()
         setMessages((prev) => {
           const updated = [...prev]
           const idx = updated.findIndex((m) => m.id === taskMsg.id)
@@ -978,51 +1010,33 @@ export function ChatInterface({ fullscreen = false, projectId, teamId }: ChatInt
           msg.summary = extractSummary(msg.events)
           if (event.task_id) msg.taskId = event.task_id
           updated[idx] = msg
-          // Push current events to StreamingContext for MeetingRoom
-          setStreamingState({ currentEvents: msg.events })
           return updated
         })
-      },
-      () => {
-        activeTaskIdRef.current = null
-        activeTaskMsgIdRef.current = null
-        setStreamStartTime(null)
-        activeAgentsRef.current = new Set()
-        setStreamingState({ isStreaming: false, activeAgents: [] })
-        setMessages((prev) => {
-          const updated = [...prev]
-          const idx = updated.findIndex((m) => m.id === taskMsg.id)
-          if (idx === -1) return prev
-          const msg = updated[idx]
-          const hasResult = msg.events.some((e) => e.type === "result")
-          const hasError = msg.events.some((e) => e.type === "error")
-          const finalStatus = hasResult ? "completed" : hasError ? "error" : "completed"
-          const summary = finalStatus === "error" && !hasResult
-            ? msg.events.filter((e) => e.type === "error").map((e) => e.message).join("; ")
-            : msg.summary
-          updated[idx] = { ...updated[idx], status: finalStatus, summary }
-          return updated
-        })
-        setIsSubmitting(false)
-      },
-      (err) => {
-        activeTaskIdRef.current = null
-        activeTaskMsgIdRef.current = null
-        setStreamStartTime(null)
-        activeAgentsRef.current = new Set()
-        setStreamingState({ isStreaming: false, activeAgents: [] })
-        setMessages((prev) => {
-          const updated = [...prev]
-          const idx = updated.findIndex((m) => m.id === taskMsg.id)
-          if (idx === -1) return prev
-          updated[idx] = { ...updated[idx], status: "error", summary: `Error: ${err.message}` }
-          return updated
-        })
-        setIsSubmitting(false)
-      },
-      teamId,
-      projectId,
-    )
+        abortRef.current = streamResearch(query, onEvent, onDone, onError, teamId, projectId, event.task_id)
+        return
+      }
+      if (event.agent && event.agent !== "system" && event.agent !== "User") {
+        const id = event.agent.replace(/ #\d+$/, "").toLowerCase().replace(/\s+/g, "-")
+        if (!activeAgentsRef.current.has(id)) {
+          activeAgentsRef.current.add(id)
+          setStreamingState({ isStreaming: true, activeAgents: [...activeAgentsRef.current] })
+        }
+      }
+      setMessages((prev) => {
+        const updated = [...prev]
+        const idx = updated.findIndex((m) => m.id === taskMsg.id)
+        if (idx === -1) return prev
+        const msg = { ...updated[idx] }
+        msg.events = [...msg.events, log]
+        msg.summary = extractSummary(msg.events)
+        if (event.task_id) msg.taskId = event.task_id
+        updated[idx] = msg
+        setStreamingState({ currentEvents: msg.events })
+        return updated
+      })
+    }
+
+    abortRef.current = streamResearch(query, onEvent, onDone, onError, teamId, projectId)
   }
 
   const handleCancel = async () => {

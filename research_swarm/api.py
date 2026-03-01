@@ -45,10 +45,11 @@ web_app.add_middleware(
 # ── Request / response models ─────────────────────────────────────────────
 
 class ResearchRequest(BaseModel):
-    query: str
+    query: str = ""
     team_id: str | None = None
     project_id: str | None = None
     memory_context: list[dict] | None = None
+    continue_task_id: str | None = None
 
 class TeamCreate(BaseModel):
     name: str
@@ -251,7 +252,14 @@ async def submit_research_stream(req: ResearchRequest) -> StreamingResponse:
 
     def _run():
         try:
-            gen = run_research(req.query, model, team_id=req.team_id, project_id=req.project_id, memory_context=req.memory_context)
+            gen = run_research(
+                req.query,
+                model,
+                team_id=req.team_id,
+                project_id=req.project_id,
+                memory_context=req.memory_context,
+                existing_task_id=req.continue_task_id,
+            )
             for event in gen:
                 # Track which agents are active from stream events
                 agent_name = event.get("agent", "")
