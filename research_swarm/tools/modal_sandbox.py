@@ -20,7 +20,7 @@ TOOL_SCHEMA = {
     "type": "function",
     "function": {
         "name": "modal_sandbox",
-        "description": "Execute Python code in an isolated Modal sandbox container with optional GPU. Use this to reproduce paper implementations, run experiments, and test code. The container has git installed. WANDB_API_KEY and GITHUB_TOKEN are available. Returns stdout, stderr, and exit code. print() output is captured. For subprocesses, use subprocess.run(..., capture_output=True, text=True) then print(result.stdout, result.stderr, result.returncode) to see their output.",
+        "description": "Execute Python code in an isolated Modal sandbox container with optional GPU. Use this to reproduce paper implementations, run experiments, and test code. The container has git installed. WANDB_API_KEY and GITHUB_TOKEN are available. GIT_TERMINAL_PROMPT=0 is set so git never prompts for credentials. For git clone: use the EXACT repo URL from the research context (never placeholder URLs like https://github.com/username/repo.git). Use subprocess.run(['git', 'clone', url, dir], capture_output=True, text=True, env={**os.environ, 'GIT_TERMINAL_PROMPT': '0'}) and print(stdout, stderr, returncode); do not use os.system() for git clone. For private GitHub repos use https://x-access-token:<GITHUB_TOKEN>@github.com/owner/repo.git. Returns stdout, stderr, and exit code. print() output is captured.",
         "parameters": {
             "type": "object",
             "properties": {
@@ -137,7 +137,8 @@ def modal_sandbox(
                 return res
         if setup_commands:
             for cmd in setup_commands:
-                setup_proc = sb.exec("bash", "-c", cmd)
+                # Prevent git from prompting for credentials if model runs git clone in setup_commands
+                setup_proc = sb.exec("bash", "-c", "export GIT_TERMINAL_PROMPT=0 && " + cmd)
                 setup_proc.wait()
                 if setup_proc.returncode != 0:
                     err = (setup_proc.stderr.read() or "")[:2000]
@@ -171,10 +172,11 @@ def modal_sandbox(
             return res
 
         # PTY so Python sees a TTY and line-buffers stdout (print() is captured). -u and PYTHONUNBUFFERED as backup.
+        # GIT_TERMINAL_PROMPT=0 prevents git from prompting for username/password (would block forever in container).
         proc = sb.exec(
             "python", "-u", "/root/experiment.py",
             timeout=timeout,
-            env={"PYTHONUNBUFFERED": "1"},
+            env={"PYTHONUNBUFFERED": "1", "GIT_TERMINAL_PROMPT": "0"},
             pty=True,
         )
         # Modal docs: "read() blocks until the process finishes and returns the entire output stream."

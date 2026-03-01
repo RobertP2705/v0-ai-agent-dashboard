@@ -167,7 +167,7 @@ def run_research(
         impl_instruction = (
             "Use the research context below. Do NOT call fetch_url or web_search first — "
             "repo URLs and info are already in the context. "
-            "Your first step MUST be modal_sandbox: git clone the repo(s) mentioned above, install deps, and run the code."
+            "Your first step MUST be modal_sandbox: git clone the repo(s) mentioned above (if they exist) (use the EXACT URL(s) from the context — never placeholder URLs like https://github.com/username/repo.git), install deps, and run the code. Use subprocess.run for git clone with capture_output=True and GIT_TERMINAL_PROMPT=0; do not use os.system() for git."
         )
         if collector_summary:
             impl_instruction = (
