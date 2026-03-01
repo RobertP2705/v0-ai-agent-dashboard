@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react"
 import { createClient } from "@/lib/supabase/client"
-import { Menu, FolderOpen } from "lucide-react"
+import { Menu } from "lucide-react"
 import { SidebarNav } from "@/components/dashboard/sidebar-nav"
 import { ApiCreditsView } from "@/components/dashboard/api-credits-view"
 import { TeamsView } from "@/components/dashboard/teams-view"
@@ -40,22 +40,6 @@ const viewMeta: Record<string, { title: string; description: string }> = {
   },
   "project-meeting": {
     title: "Research Meeting Room",
-    description: "Multi-agent discussion with voice synthesis",
-  },
-  research: {
-    title: "Research Console",
-    description: "Full-screen research console with live agent monitoring",
-  },
-  "knowledge-graph": {
-    title: "Knowledge Graph",
-    description: "Visualize memories, papers, and connections",
-  },
-  papers: {
-    title: "Papers Library",
-    description: "Browse and search collected research papers",
-  },
-  meeting: {
-    title: "Meeting Room",
     description: "Multi-agent discussion with voice synthesis",
   },
   teams: {
@@ -198,39 +182,6 @@ export function DashboardShell() {
                   projectId={selectedProject.id}
                   activeSubView={activeView.replace("project-", "")}
                 />
-              </div>
-            )}
-
-            {/* Workspace views — require a project to be selected */}
-            {(activeView === "research" ||
-              activeView === "knowledge-graph" ||
-              activeView === "papers" ||
-              activeView === "meeting") && (
-              <div className="flex h-full items-center justify-center">
-                <div className="flex max-w-sm flex-col items-center gap-4 text-center">
-                  <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
-                    <FolderOpen className="h-6 w-6 text-primary" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium text-foreground">
-                      No project selected
-                    </p>
-                    <p className="mt-1 font-mono text-xs text-muted-foreground">
-                      Please select a research project first to access this view.
-                    </p>
-                  </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="gap-2"
-                    onClick={() => {
-                      setActiveView("projects")
-                    }}
-                  >
-                    <FolderOpen className="h-3.5 w-3.5" />
-                    Browse Projects
-                  </Button>
-                </div>
               </div>
             )}
 
