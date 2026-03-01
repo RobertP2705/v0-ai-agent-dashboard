@@ -62,7 +62,10 @@ async function computeSemanticEdges(
       const sourceId = `mem-${batch[i].id}`
       for (const match of result.value) {
         if (match.similarity < SEMANTIC_SIMILARITY_THRESHOLD) continue
-        const targetId = `mem-${match.id}`
+        // Nodes are keyed by document id (from documents.list); search.memories returns memory ids.
+        // Use linked document id when present so the edge targets an existing node.
+        const docId = (match as { documents?: Array<{ id: string }> }).documents?.[0]?.id
+        const targetId = docId ? `mem-${docId}` : `mem-${match.id}`
         if (sourceId === targetId) continue
         const key = [sourceId, targetId].sort().join("--")
         if (edgeSet.has(key)) continue
@@ -124,7 +127,8 @@ async function computeCrossTypeEdges(
       const sourceId = batch[i].id
       for (const match of result.value) {
         if (match.similarity < SEMANTIC_SIMILARITY_THRESHOLD) continue
-        const targetId = `mem-${match.id}`
+        const docId = (match as { documents?: Array<{ id: string }> }).documents?.[0]?.id
+        const targetId = docId ? `mem-${docId}` : `mem-${match.id}`
         const key = [sourceId, targetId].sort().join("--")
         if (edgeSet.has(key)) continue
         edgeSet.add(key)
