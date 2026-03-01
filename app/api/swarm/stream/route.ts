@@ -9,6 +9,18 @@ const MODAL_URL = process.env.MODAL_ENDPOINT_URL || "http://localhost:8000"
 /** Cancel stream at 750s so we can send timeout_continue before Vercel's 800s limit. */
 const STREAM_TIMEOUT_MS = 750 * 1000
 
+/** Max wait for Supermemory context so we don't block research start; proceed without context on timeout. */
+const MEMORY_CONTEXT_TIMEOUT_MS = 4_000
+
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error("timeout")), ms),
+    ),
+  ])
+}
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
@@ -22,17 +34,20 @@ export async function POST(req: NextRequest) {
         const supabase = await createClient()
         const { data: { user } } = await supabase.auth.getUser()
         if (user?.id) {
-          const results = await searchMemories({
-            q: query,
-            containerTags: [user.id],
-            limit: 10,
-          })
+          const results = await withTimeout(
+            searchMemories({
+              q: query,
+              containerTags: [user.id],
+              limit: 10,
+            }),
+            MEMORY_CONTEXT_TIMEOUT_MS,
+          )
           memoryContext = (results as { content?: string }[])
             .filter((r) => typeof r.content === "string")
             .map((r) => ({ content: r.content! }))
         }
       } catch {
-        // non-fatal: proceed without memory context
+        // non-fatal: proceed without memory context (timeout or API error)
       }
     }
 

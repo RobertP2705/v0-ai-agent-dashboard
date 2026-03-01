@@ -89,12 +89,13 @@ def modal_sandbox(
     except Exception as e:
         return _sandbox_result("", "", -1, f"App lookup failed: {e}")
 
-    # Use a fixed image (no pip_install here) so image build never fails due to bad/incompatible reqs.
-    # We install requirements at runtime via setup_commands so pip errors show up in stderr.
+    # Bake requirements into the image so Modal can cache it; same reqs = fast sandbox start (no runtime pip).
     image = (
         modal.Image.debian_slim(python_version="3.11")
         .run_commands("apt-get update && apt-get install -y --no-install-recommends git")
     )
+    if reqs:
+        image = image.pip_install(*reqs, "wandb")
 
     sandbox_kwargs: dict = dict(
         app=app_ref,
@@ -110,31 +111,10 @@ def modal_sandbox(
     except Exception as e:
         err_msg = str(e)
         if "Image build" in err_msg or "im-" in err_msg:
-            err_msg += " (Tip: image uses a fixed base with only git; requirements are installed at runtime. If you see this, the base image build failed—check Modal dashboard build logs.)"
+            err_msg += " (Tip: requirements are baked into the image. If pip install fails during build, try fewer/different packages or use setup_commands for tricky deps. Check Modal dashboard build logs.)"
         return _sandbox_result("", "", -1, f"Sandbox.create failed: {err_msg}")
 
     try:
-        # Install requirements at runtime so image build is always fast and reliable
-        if reqs:
-            pip_cmd = "pip install --no-cache-dir " + " ".join(f'"{r}"' for r in reqs) + " wandb"
-            pip_proc = sb.exec("bash", "-c", pip_cmd)
-            pip_proc.wait()
-            if pip_proc.returncode != 0:
-                stderr = (pip_proc.stderr.read() or "")[:4000]
-                stdout = (pip_proc.stdout.read() or "")[:2000]
-                try:
-                    sb.terminate()
-                except Exception:
-                    pass
-                res = _sandbox_result(
-                    stdout,
-                    stderr,
-                    pip_proc.returncode or -1,
-                    f"pip install failed for requirements. Try fewer/different packages or use setup_commands for tricky deps.",
-                )
-                if progress_queue is not None:
-                    progress_queue.put(("done", res))
-                return res
         if setup_commands:
             for cmd in setup_commands:
                 # Prevent git from prompting for credentials if model runs git clone in setup_commands
