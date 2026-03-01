@@ -47,6 +47,7 @@ web_app.add_middleware(
 class ResearchRequest(BaseModel):
     query: str
     team_id: str | None = None
+    project_id: str | None = None
     memory_context: list[dict] | None = None
 
 class TeamCreate(BaseModel):
@@ -217,7 +218,7 @@ async def submit_research(req: ResearchRequest) -> dict:
         with _sessions_lock:
             _active_sessions[session_key] = set()
         try:
-            gen = run_research(req.query, model, team_id=req.team_id, memory_context=req.memory_context)
+            gen = run_research(req.query, model, team_id=req.team_id, project_id=req.project_id, memory_context=req.memory_context)
             for event in gen:
                 agent_name = event.get("agent", "")
                 if agent_name and agent_name != "system":
@@ -250,7 +251,7 @@ async def submit_research_stream(req: ResearchRequest) -> StreamingResponse:
 
     def _run():
         try:
-            gen = run_research(req.query, model, team_id=req.team_id, memory_context=req.memory_context)
+            gen = run_research(req.query, model, team_id=req.team_id, project_id=req.project_id, memory_context=req.memory_context)
             for event in gen:
                 # Track which agents are active from stream events
                 agent_name = event.get("agent", "")

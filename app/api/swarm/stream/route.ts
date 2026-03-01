@@ -2,7 +2,7 @@ import { NextRequest } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { searchMemories } from "@/lib/supermemory"
 
-export const maxDuration = 800
+export const maxDuration = 900
 
 const MODAL_URL = process.env.MODAL_ENDPOINT_URL || "http://localhost:8000"
 
@@ -44,7 +44,7 @@ export async function POST(req: NextRequest) {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(15 * 60 * 1000),
+      signal: AbortSignal.timeout(45 * 60 * 1000),
     })
 
     if (!upstreamRes.ok || !upstreamRes.body) {

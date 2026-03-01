@@ -93,11 +93,13 @@ def update_team_agent(agent_row_id: str, updates: dict) -> dict:
 
 # ── Tasks ──────────────────────────────────────────────────────────────────
 
-def create_task(query: str, team_id: str | None = None) -> dict:
+def create_task(query: str, team_id: str | None = None, project_id: str | None = None) -> dict:
     sb = _get_client()
     row: dict[str, Any] = {"query": query, "status": "pending"}
     if team_id:
         row["team_id"] = team_id
+    if project_id:
+        row["project_id"] = project_id
     res = sb.table("tasks").insert(row).execute()
     return _first(res, "tasks", "insert")
 

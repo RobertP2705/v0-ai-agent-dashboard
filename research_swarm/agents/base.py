@@ -6,6 +6,8 @@ Every event is persisted to Supabase via db.insert_event().
 from __future__ import annotations
 
 import json
+import queue
+import threading
 import time
 from dataclasses import dataclass, field
 from typing import Any, Generator
@@ -273,7 +275,32 @@ class BaseAgent:
                     summary = f"Running sandbox ({len(meta['code'])} chars)"
                 yield self._emit("action", summary, **meta)
 
-                tool_result = self._call_tool(fn_name, fn_args)
+                if fn_name == "modal_sandbox":
+                    progress_queue = queue.Queue()
+
+                    def run_sandbox():
+                        from ..tools.modal_sandbox import modal_sandbox
+                        modal_sandbox(progress_queue=progress_queue, **fn_args)
+
+                    t = threading.Thread(target=run_sandbox, daemon=True)
+                    t.start()
+                    tool_result = json.dumps({"error": "sandbox did not return result", "exit_code": -1})
+                    while t.is_alive() or not progress_queue.empty():
+                        self._check_cancelled()
+                        try:
+                            kind, payload = progress_queue.get(timeout=25)
+                        except queue.Empty:
+                            if t.is_alive():
+                                yield self._emit("thought", "Sandbox still running…")
+                            continue
+                        if kind == "done":
+                            tool_result = json.dumps(payload)
+                            break
+                        preview = (payload[:350] + "…") if len(payload) > 350 else payload
+                        preview = preview.replace("\n", " ").strip()
+                        yield self._emit("thought", f"Sandbox {kind}: {preview}")
+                else:
+                    tool_result = self._call_tool(fn_name, fn_args)
                 result_meta: dict[str, Any] = {"tool": fn_name, "chars": len(tool_result)}
                 try:
                     parsed = json.loads(tool_result)
