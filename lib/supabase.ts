@@ -241,15 +241,20 @@ export async function fetchAllEvents(limit = 200): Promise<TaskEventRow[]> {
   return (data ?? []).reverse()
 }
 
-export async function fetchPapers(limit = 50): Promise<Paper[]> {
+export async function fetchPapers(
+  page = 0,
+  pageSize = 50,
+): Promise<{ data: Paper[]; total: number }> {
   const supabase = getSupabase()
-  const { data, error } = await supabase
+  const from = page * pageSize
+  const to = from + pageSize - 1
+  const { data, error, count } = await supabase
     .from("papers")
-    .select("*")
+    .select("*", { count: "exact" })
     .order("created_at", { ascending: false })
-    .limit(limit)
+    .range(from, to)
   if (error) throw error
-  return data ?? []
+  return { data: data ?? [], total: count ?? 0 }
 }
 
 export async function fetchExperiments(limit = 50): Promise<Experiment[]> {
@@ -458,24 +463,30 @@ export async function fetchTasksForProject(projectId: string, limit = 50): Promi
   return data ?? []
 }
 
-export async function fetchPapersForProject(projectId: string, limit = 50): Promise<Paper[]> {
+export async function fetchPapersForProject(
+  projectId: string,
+  page = 0,
+  pageSize = 50,
+): Promise<{ data: Paper[]; total: number }> {
   const project = await fetchProject(projectId)
-  if (!project.team_id) return []
+  if (!project.team_id) return { data: [], total: 0 }
   const supabase = getSupabase()
   const taskIds = await supabase
     .from("tasks")
     .select("id")
     .eq("team_id", project.team_id)
   const ids = (taskIds.data ?? []).map((t) => t.id)
-  if (ids.length === 0) return []
-  const { data, error } = await supabase
+  if (ids.length === 0) return { data: [], total: 0 }
+  const from = page * pageSize
+  const to = from + pageSize - 1
+  const { data, error, count } = await supabase
     .from("papers")
-    .select("*")
+    .select("*", { count: "exact" })
     .in("task_id", ids)
     .order("created_at", { ascending: false })
-    .limit(limit)
+    .range(from, to)
   if (error) throw error
-  return data ?? []
+  return { data: data ?? [], total: count ?? 0 }
 }
 
 export async function fetchEventsForProject(projectId: string, limit = 200): Promise<TaskEventRow[]> {

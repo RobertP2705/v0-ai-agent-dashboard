@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, useMemo } from "react"
+import { useEffect, useState, useMemo, useCallback, useRef } from "react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { ScrollArea } from "@/components/ui/scroll-area"
@@ -22,6 +22,8 @@ import {
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { supabaseConfigured, fetchPapers, type Paper } from "@/lib/supabase"
+
+const PAGE_SIZE = 50
 
 function formatDate(dateStr: string): string {
   return new Date(dateStr).toLocaleDateString("en-US", {
@@ -130,19 +132,54 @@ function PaperCard({ paper }: { paper: Paper }) {
 
 export function PapersView() {
   const [papers, setPapers] = useState<Paper[]>([])
+  const [total, setTotal] = useState(0)
+  const [page, setPage] = useState(0)
   const [loading, setLoading] = useState(true)
+  const [loadingMore, setLoadingMore] = useState(false)
   const [searchQuery, setSearchQuery] = useState("")
+  const sentinelRef = useRef<HTMLDivElement>(null)
+
+  const loadPage = useCallback(async (pageNum: number, append: boolean) => {
+    if (append) setLoadingMore(true)
+    else setLoading(true)
+    try {
+      const result = await fetchPapers(pageNum, PAGE_SIZE)
+      setPapers((prev) => append ? [...prev, ...result.data] : result.data)
+      setTotal(result.total)
+      setPage(pageNum)
+    } catch {
+      // keep existing
+    } finally {
+      setLoading(false)
+      setLoadingMore(false)
+    }
+  }, [])
 
   useEffect(() => {
     if (!supabaseConfigured) {
       setLoading(false)
       return
     }
-    fetchPapers(200)
-      .then(setPapers)
-      .catch(() => {})
-      .finally(() => setLoading(false))
-  }, [])
+    loadPage(0, false)
+  }, [loadPage])
+
+  const hasMore = papers.length < total
+
+  useEffect(() => {
+    if (!hasMore || loadingMore || loading) return
+    const sentinel = sentinelRef.current
+    if (!sentinel) return
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting && hasMore && !loadingMore) {
+          loadPage(page + 1, true)
+        }
+      },
+      { rootMargin: "200px" },
+    )
+    observer.observe(sentinel)
+    return () => observer.disconnect()
+  }, [hasMore, loadingMore, loading, page, loadPage])
 
   const filtered = useMemo(() => {
     if (!searchQuery.trim()) return papers
@@ -166,6 +203,10 @@ export function PapersView() {
     )
   }
 
+  const countLabel = searchQuery
+    ? `${filtered.length} / ${total}`
+    : `${papers.length} / ${total}`
+
   return (
     <div className="flex h-full flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -175,7 +216,7 @@ export function PapersView() {
             Papers Library
           </span>
           <Badge variant="outline" className="font-mono text-[10px] px-1.5 py-0">
-            {filtered.length}{filtered.length !== papers.length ? ` / ${papers.length}` : ""}
+            {countLabel}
           </Badge>
         </div>
         <div className="relative">
@@ -209,6 +250,16 @@ export function PapersView() {
               <PaperCard key={paper.id} paper={paper} />
             ))}
           </div>
+          {!searchQuery && (
+            <div ref={sentinelRef} className="flex items-center justify-center py-4">
+              {loadingMore && (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                  <span className="ml-2 font-mono text-[10px] text-muted-foreground">Loading more...</span>
+                </>
+              )}
+            </div>
+          )}
         </ScrollArea>
       )}
     </div>

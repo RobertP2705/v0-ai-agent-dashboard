@@ -85,7 +85,7 @@ export function ProjectsLanding({ onSelectProject }: ProjectsLandingProps) {
       const project = await createProject(
         newName.trim(),
         newDescription.trim(),
-        newTeamId || undefined,
+        newTeamId && newTeamId !== "none" ? newTeamId : undefined,
       )
       setProjects((prev) => [project, ...prev])
       setNewName("")

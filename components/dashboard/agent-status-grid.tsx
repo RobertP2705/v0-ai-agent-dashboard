@@ -94,10 +94,9 @@ export function AgentStatusGrid({ projectId, teamId }: AgentStatusGridProps = {}
   const [agents, setAgents] = useState<SwarmAgent[]>([])
   const [stats, setStats] = useState<DashboardStats | null>(null)
   const [teams, setTeams] = useState<Team[]>([])
-  const [selectedTeamId, setSelectedTeamId] = useState<string | null>(teamId ?? null)
   const { isStreaming, activeAgents } = useStreaming()
 
-  const selectedTeam = teams.find((t) => t.id === selectedTeamId)
+  const selectedTeam = teams.find((t) => t.id === teamId)
 
   function getInstanceCount(agentType: string): number {
     if (!selectedTeam?.team_agents) return 1
@@ -148,29 +147,6 @@ export function AgentStatusGrid({ projectId, teamId }: AgentStatusGridProps = {}
         </div>
       ) : (
         <>
-          {teams.length > 0 && (
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="font-mono text-[10px] text-muted-foreground">Team:</span>
-              <select
-                value={selectedTeamId ?? ""}
-                onChange={(e) => setSelectedTeamId(e.target.value || null)}
-                className="h-7 rounded border border-border bg-secondary px-2 font-mono text-[11px] text-foreground"
-              >
-                <option value="">Default (1 each)</option>
-                {teams.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.name}
-                  </option>
-                ))}
-              </select>
-              {selectedTeam && (
-                <span className="font-mono text-[10px] text-muted-foreground">
-                  — scale agents with +/- buttons
-                </span>
-              )}
-            </div>
-          )}
-
           <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
             {agents.map((agent) => {
               const Icon = agentIcons[agent.id] || BookOpen

@@ -36,6 +36,7 @@ import {
   Trash2,
   BookOpen,
   Compass,
+  Users,
 } from "lucide-react"
 import { SupermemoryIcon } from "@/components/ui/supermemory-icon"
 import { StatusStepper } from "./status-stepper"
@@ -44,21 +45,12 @@ import { getAgentColor } from "@/lib/simulation-data"
 import { streamResearch, cancelTask, type SwarmEvent } from "@/lib/swarm-client"
 import {
   supabaseConfigured,
-  fetchTeams,
   loadChatHistory,
   saveChatHistory,
   clearChatHistory,
-  type Team,
 } from "@/lib/supabase"
 import { createClient as createSupabaseClient } from "@/lib/supabase/client"
 import { useStreaming } from "@/lib/streaming-context"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
 
 // ── Types ─────────────────────────────────────────────────────────────────
 
@@ -818,8 +810,6 @@ export function ChatInterface({ fullscreen = false, projectId, teamId }: ChatInt
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [inputValue, setInputValue] = useState("")
   const [isSubmitting, setIsSubmitting] = useState(false)
-  const [teams, setTeams] = useState<Team[]>([])
-  const [selectedTeamId, setSelectedTeamId] = useState<string | null>(teamId ?? null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const abortRef = useRef<AbortController | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
@@ -846,16 +836,6 @@ export function ChatInterface({ fullscreen = false, projectId, teamId }: ChatInt
     createSupabaseClient().auth.getUser().then(({ data: { user } }) => {
       setUserId(user?.id ?? null)
     })
-  }, [])
-
-  // Sync selectedTeamId when teamId prop changes (project assignment)
-  useEffect(() => {
-    if (teamId) setSelectedTeamId(teamId)
-  }, [teamId])
-
-  useEffect(() => {
-    if (!supabaseConfigured) return
-    fetchTeams().then(setTeams).catch(() => {})
   }, [])
 
   useEffect(() => {
@@ -1048,7 +1028,7 @@ export function ChatInterface({ fullscreen = false, projectId, teamId }: ChatInt
         })
         setIsSubmitting(false)
       },
-      selectedTeamId ?? teamId ?? undefined,
+      teamId,
       projectId,
     )
   }
@@ -1100,14 +1080,11 @@ export function ChatInterface({ fullscreen = false, projectId, teamId }: ChatInt
   const latestTaskGroups = latestTask ? buildAgentGroups(latestTask.events) : []
   const currentStreamEvents = latestTask?.events ?? []
 
-  const teamSelector = !teamId && teams.length > 0 && (
-    <Select value={selectedTeamId ?? "all"} onValueChange={(v) => setSelectedTeamId(v === "all" ? null : v)}>
-      <SelectTrigger className="h-8 min-w-0 flex-1 font-mono text-[11px] sm:w-[180px] sm:flex-initial" size="sm"><SelectValue placeholder="Team" /></SelectTrigger>
-      <SelectContent>
-        <SelectItem value="all" className="font-mono text-xs">All agents (default)</SelectItem>
-        {teams.map((t) => (<SelectItem key={t.id} value={t.id} className="font-mono text-xs">{t.name}</SelectItem>))}
-      </SelectContent>
-    </Select>
+  const teamBadge = teamId && (
+    <Badge variant="outline" className="gap-1 font-mono text-[9px] text-muted-foreground">
+      <Users className="h-3 w-3" />
+      Team linked
+    </Badge>
   )
 
   const inputBar = (
@@ -1185,7 +1162,7 @@ export function ChatInterface({ fullscreen = false, projectId, teamId }: ChatInt
                 Supermemory
               </Badge>
             )}
-            {teamSelector}
+            {teamBadge}
           </div>
         </div>
 
@@ -1221,7 +1198,7 @@ export function ChatInterface({ fullscreen = false, projectId, teamId }: ChatInt
             </Badge>
           )}
         </CardTitle>
-        {teamSelector}
+        {teamBadge}
       </CardHeader>
       <CardContent className="flex min-h-0 flex-1 flex-col overflow-hidden p-0">
         {messageList}
