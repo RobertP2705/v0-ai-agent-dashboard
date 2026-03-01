@@ -156,7 +156,7 @@ export function KnowledgeGraphView({ projectId }: KnowledgeGraphViewProps = {}) 
     return () => clearInterval(interval)
   }, [loading])
 
-  // Measure the graph wrapper so the canvas matches the card (avoids clipping)
+  // Measure the graph wrapper so the canvas matches the card; fallback + delayed measure so graph always renders
   useEffect(() => {
     const el = wrapperRef.current
     if (!el) return
@@ -169,9 +169,15 @@ export function KnowledgeGraphView({ projectId }: KnowledgeGraphViewProps = {}) 
       }
     }
     measure()
+    const raf = requestAnimationFrame(measure)
+    const late = setTimeout(measure, 150)
     const observer = new ResizeObserver(measure)
     observer.observe(el)
-    return () => observer.disconnect()
+    return () => {
+      cancelAnimationFrame(raf)
+      clearTimeout(late)
+      observer.disconnect()
+    }
   }, [])
 
   // Auto-fit to view once the simulation settles so the whole graph is visible
@@ -504,11 +510,14 @@ export function KnowledgeGraphView({ projectId }: KnowledgeGraphViewProps = {}) 
         className="relative flex min-h-[420px] min-w-0 flex-1 overflow-hidden rounded-lg border border-border bg-muted/20"
       >
         <div ref={containerRef} className="absolute inset-0 size-full">
-          {dimensions.width > 0 && dimensions.height > 0 && (
+          {filteredData.nodes.length > 0 && (() => {
+            const w = dimensions.width || 800
+            const h = dimensions.height || 600
+            return (
             <ForceGraph2D
               ref={graphRef as React.MutableRefObject<FGMethods | undefined>}
-              width={selectedNode ? dimensions.width * 0.65 : dimensions.width}
-              height={dimensions.height}
+              width={selectedNode ? w * 0.65 : w}
+              height={h}
               graphData={filteredData}
               nodeId="id"
               nodeCanvasObject={nodeCanvasObject}
@@ -529,7 +538,8 @@ export function KnowledgeGraphView({ projectId }: KnowledgeGraphViewProps = {}) 
               enableNodeDrag={true}
               enableZoomInteraction={true}
             />
-          )}
+            )
+          })()}
         </div>
 
         {/* Detail Panel */}
