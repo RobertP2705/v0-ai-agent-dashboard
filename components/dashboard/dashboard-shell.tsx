@@ -131,8 +131,8 @@ export function DashboardShell() {
         {!isMobile && sidebarContent}
 
         <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
-          <header className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-2 sm:px-6 sm:py-3">
-            <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-4">
+          <header className="flex shrink-0 items-center justify-between gap-3 border-b border-border/80 bg-card/40 px-4 py-2.5 backdrop-blur-sm sm:px-6 sm:py-3">
+            <div className="flex min-w-0 flex-1 items-center gap-3 sm:gap-4">
               {isMobile && (
                 <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
                   <SheetTrigger asChild>
@@ -155,35 +155,35 @@ export function DashboardShell() {
               )}
               <div className="min-w-0 flex-1">
                 <h2
-                  className="truncate text-sm font-semibold text-foreground"
+                  className="truncate text-sm font-semibold tracking-tight text-foreground"
                   data-tour="header-title"
                 >
                   {meta.title}
                 </h2>
-                <p className="truncate font-mono text-[10px] text-muted-foreground">
+                <p className="truncate font-mono text-[10px] text-muted-foreground/70">
                   {meta.description}
                 </p>
               </div>
             </div>
-            <div className="flex shrink-0 items-center gap-2 sm:gap-3">
+            <div className="flex shrink-0 items-center gap-3 sm:gap-4">
               {user && (
-                <span className="hidden max-w-[120px] truncate font-mono text-[10px] text-muted-foreground sm:block sm:max-w-[180px]">
+                <span className="hidden max-w-[120px] truncate rounded-md bg-secondary/50 px-2 py-1 font-mono text-[10px] text-muted-foreground sm:block sm:max-w-[180px]">
                   {user.email}
                 </span>
               )}
-              <div className="flex items-center gap-2">
-                <span className="relative flex h-2 w-2">
+              <div className="flex items-center gap-2 rounded-full border border-success/20 bg-success/5 px-2.5 py-1">
+                <span className="relative flex h-1.5 w-1.5">
                   <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-success opacity-75" />
-                  <span className="relative inline-flex h-2 w-2 rounded-full bg-success" />
+                  <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-success" />
                 </span>
-                <span className="font-mono text-[10px] text-muted-foreground">
+                <span className="font-mono text-[10px] font-medium text-success">
                   Live
                 </span>
               </div>
             </div>
           </header>
 
-          <div className="flex-1 overflow-auto p-2 sm:p-4">
+          <div className="flex-1 overflow-auto p-3 sm:p-5">
             {/* Projects landing page */}
             {activeView === "projects" && (
               <ProjectsLanding

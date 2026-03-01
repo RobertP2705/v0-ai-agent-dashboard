@@ -44,14 +44,14 @@ export function ApiCreditsView({ userEmail, userId }: ApiCreditsViewProps) {
   return (
     <div className="flex flex-col gap-4">
       {userEmail && (
-        <Card className="border-border bg-card/80 backdrop-blur-sm">
-          <CardContent className="flex items-center gap-3 py-3">
-            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary">
-              <User className="h-4 w-4 text-primary-foreground" />
+        <Card className="border-border/80 bg-card/60 backdrop-blur-sm">
+          <CardContent className="flex items-center gap-3 py-3.5">
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/15">
+              <User className="h-4 w-4 text-primary" />
             </div>
             <div className="min-w-0 flex-1">
               <p className="text-xs font-medium text-foreground">Account</p>
-              <p className="truncate font-mono text-[10px] text-muted-foreground">
+              <p className="truncate font-mono text-[10px] text-muted-foreground/70">
                 {userEmail}
               </p>
             </div>
@@ -62,7 +62,7 @@ export function ApiCreditsView({ userEmail, userId }: ApiCreditsViewProps) {
         </Card>
       )}
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-        <Card className="border-border bg-card/80 backdrop-blur-sm">
+        <Card className="border-border/80 bg-card/60 backdrop-blur-sm">
           <CardHeader className="pb-2">
             <CardTitle className="flex items-center gap-2 text-sm font-medium">
               <Key className="h-3.5 w-3.5 text-warning" />
@@ -71,33 +71,36 @@ export function ApiCreditsView({ userEmail, userId }: ApiCreditsViewProps) {
           </CardHeader>
           <CardContent className="space-y-2">
             {supabaseConfigured && (
-              <div className="flex items-center justify-between rounded-md border border-border bg-secondary/30 px-3 py-2">
+              <div className="flex items-center justify-between rounded-lg border border-border/80 bg-secondary/20 px-3 py-2.5">
                 <div>
                   <p className="text-xs font-medium text-foreground">Supabase</p>
-                  <p className="font-mono text-[10px] text-muted-foreground">sb_...configured</p>
+                  <p className="font-mono text-[10px] text-muted-foreground/70">sb_...configured</p>
                 </div>
                 <Badge variant="outline" className="border-success/30 bg-success/10 font-mono text-[10px] text-success">
                   connected
                 </Badge>
               </div>
             )}
-            <div className="flex items-center justify-center rounded-md border border-dashed border-muted-foreground/30 bg-muted/30 px-3 py-4">
-              <Badge variant="outline" className="font-mono text-[10px] text-muted-foreground">
-                TODO: HuggingFace, Tavily, GitHub, W&B, ElevenLabs — status in Modal backend, not verified from dashboard
-              </Badge>
-            </div>
+            {["HuggingFace", "Tavily", "GitHub", "W&B", "ElevenLabs"].map((service) => (
+              <div key={service} className="flex items-center justify-between rounded-lg border border-border/50 bg-secondary/10 px-3 py-2">
+                <p className="text-xs text-foreground/70">{service}</p>
+                <Badge variant="outline" className="font-mono text-[9px] text-muted-foreground/60 border-border/50">
+                  via backend
+                </Badge>
+              </div>
+            ))}
           </CardContent>
         </Card>
 
-        <Card className="border-border bg-card/80 backdrop-blur-sm">
+        <Card className="border-border/80 bg-card/60 backdrop-blur-sm">
           <CardHeader className="pb-2">
             <CardTitle className="flex items-center gap-2 text-sm font-medium">
-              <Webhook className="h-3.5 w-3.5 text-chart-2" />
+              <Webhook className="h-3.5 w-3.5 text-info" />
               Endpoints
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
-            <div className="rounded-md border border-border bg-secondary/30 px-3 py-2">
+            <div className="rounded-lg border border-border/80 bg-secondary/20 px-3 py-2.5">
               <div className="flex items-center justify-between">
                 <p className="text-xs font-medium text-foreground">Modal Research Swarm</p>
                 <Badge
@@ -114,7 +117,7 @@ export function ApiCreditsView({ userEmail, userId }: ApiCreditsViewProps) {
                 Qwen3-32B on A100 80GB via vLLM &middot; 3 agents &middot; Modal Sandbox &middot; W&amp;B &middot; GitHub
               </p>
             </div>
-            <div className="rounded-md border border-border bg-secondary/30 px-3 py-2">
+            <div className="rounded-lg border border-border/80 bg-secondary/20 px-3 py-2.5">
               <div className="flex items-center justify-between">
                 <p className="text-xs font-medium text-foreground">Supabase Realtime</p>
                 <Badge
@@ -143,7 +146,7 @@ export function ApiCreditsView({ userEmail, userId }: ApiCreditsViewProps) {
         </Card>
       </div>
 
-        <Card className="border-border bg-card/80 backdrop-blur-sm">
+      <Card className="border-border/80 bg-card/60 backdrop-blur-sm">
         <CardHeader className="pb-2">
           <CardTitle className="flex items-center gap-2 text-sm font-medium">
             <DollarSign className="h-3.5 w-3.5 text-warning" />

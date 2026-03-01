@@ -432,7 +432,7 @@ export function KnowledgeGraphView({ projectId }: KnowledgeGraphViewProps = {}) 
   return (
     <div className="flex h-full min-h-0 flex-col gap-1.5">
       {/* Toolbar */}
-      <div className="flex shrink-0 flex-wrap items-center gap-2 rounded-md border border-border bg-card/80 px-3 py-2">
+      <div className="flex shrink-0 flex-wrap items-center gap-2 rounded-lg border border-border/80 bg-card/60 px-3 py-2.5 backdrop-blur-sm">
         <div className="relative min-w-[180px] flex-1 sm:max-w-xs">
           <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
           <Input
@@ -528,7 +528,7 @@ export function KnowledgeGraphView({ projectId }: KnowledgeGraphViewProps = {}) 
       {/* Graph + Detail Panel: use most of viewport height so the graph is big and not cut off */}
       <div
         ref={wrapperRef}
-        className="relative flex min-h-[70vh] min-w-0 flex-1 overflow-hidden rounded-lg border border-border bg-muted/20"
+        className="relative flex min-h-[70vh] min-w-0 flex-1 overflow-hidden rounded-xl border border-border/80 bg-muted/10"
       >
         <div ref={containerRef} className="absolute inset-0 size-full">
           {filteredData.nodes.length > 0 && (() => {

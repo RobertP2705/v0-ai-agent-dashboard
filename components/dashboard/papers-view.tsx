@@ -44,7 +44,7 @@ function PaperCard({ paper }: { paper: Paper }) {
     : "Unknown authors"
 
   return (
-    <Card className="border-border bg-card/80 backdrop-blur-sm transition-colors hover:bg-card/90">
+    <Card className="border-border/80 bg-card/60 backdrop-blur-sm transition-all duration-200 hover:bg-card/80 hover:shadow-sm">
       <CardContent className="p-4 space-y-3">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0 flex-1">
@@ -226,7 +226,7 @@ export function PapersView() {
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search papers..."
-            className="h-8 rounded-md border border-border bg-secondary pl-8 pr-3 font-mono text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary w-[200px] sm:w-[260px]"
+            className="h-8 rounded-lg border border-border/80 bg-secondary/50 pl-8 pr-3 font-mono text-xs text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/40 transition-all w-[200px] sm:w-[260px]"
           />
         </div>
       </div>
@@ -237,9 +237,11 @@ export function PapersView() {
           <span className="ml-2 font-mono text-xs text-muted-foreground">Loading papers...</span>
         </div>
       ) : filtered.length === 0 ? (
-        <div className="flex flex-col items-center justify-center rounded-md border border-dashed border-muted-foreground/30 bg-muted/30 px-4 py-16 gap-2">
-          <FileText className="h-8 w-8 text-muted-foreground/40" />
-          <p className="font-mono text-xs text-muted-foreground">
+        <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-border/60 bg-card/30 px-4 py-16">
+          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-secondary/50">
+            <FileText className="h-6 w-6 text-muted-foreground/30" />
+          </div>
+          <p className="font-mono text-xs text-muted-foreground/70">
             {searchQuery ? "No papers match your search." : "No papers collected yet. Run a research query to get started."}
           </p>
         </div>

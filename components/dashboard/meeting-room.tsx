@@ -369,10 +369,12 @@ export function MeetingRoom({ projectId, teamId }: MeetingRoomProps = {}) {
   if (currentEvents.length === 0 && !isStreaming) {
     return (
       <div className="flex min-h-full flex-col gap-3">
-        <Card className="flex flex-1 flex-col items-center justify-center border border-dashed border-muted-foreground/30 bg-card/80">
-          <CardContent className="flex flex-col items-center justify-center gap-3 py-12">
-            <Mic className="h-10 w-10 text-muted-foreground/50" />
-            <p className="font-mono text-xs text-muted-foreground">
+        <Card className="flex flex-1 flex-col items-center justify-center rounded-xl border border-dashed border-border/60 bg-card/40">
+          <CardContent className="flex flex-col items-center justify-center gap-4 py-16">
+            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-secondary/50">
+              <Mic className="h-7 w-7 text-muted-foreground/30" />
+            </div>
+            <p className="font-mono text-xs text-muted-foreground/70">
               Start a research query to begin the meeting.
             </p>
             {ttsAvailable === false && (
@@ -390,7 +392,7 @@ export function MeetingRoom({ projectId, teamId }: MeetingRoomProps = {}) {
   }
 
   return (
-    <div className="flex h-full flex-col rounded-lg border border-border bg-card/80 backdrop-blur-sm">
+    <div className="flex h-full flex-col rounded-xl border border-border/80 bg-card/60 backdrop-blur-sm shadow-sm">
       {/* ── Header bar ───────────────────────────────────────────────── */}
       <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-2">
         <div className="flex items-center gap-3">
