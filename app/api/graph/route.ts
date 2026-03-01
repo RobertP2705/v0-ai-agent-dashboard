@@ -151,8 +151,8 @@ export async function GET() {
       }
     }
 
-    // Scope all Supabase data to the current user via the ownership chain:
-    // user → teams (user_id) → tasks (team_id) → papers/experiments/directions (task_id)
+    // Scope experiments & directions to the current user via ownership chain:
+    // user → teams (user_id) → tasks (team_id) → experiments/directions (task_id)
     const teamsRes = await supabase
       .from("teams")
       .select("id")
@@ -160,9 +160,16 @@ export async function GET() {
     const teamIds = (teamsRes.data ?? []).map((t: { id: string }) => t.id)
 
     let tasks: SupabaseTask[] = []
-    let papers: SupabasePaper[] = []
     let experiments: SupabaseExperiment[] = []
     let directions: SupabaseDirection[] = []
+
+    // Papers are a shared knowledge base — fetch all regardless of ownership
+    const papersRes = await supabase
+      .from("papers")
+      .select("id, task_id, title, abstract, summary, created_at")
+      .order("created_at", { ascending: false })
+      .limit(500)
+    const papers: SupabasePaper[] = (papersRes.data ?? []) as SupabasePaper[]
 
     if (teamIds.length > 0) {
       const tasksRes = await supabase
@@ -176,13 +183,7 @@ export async function GET() {
       const taskIds = tasks.map((t) => t.id)
 
       if (taskIds.length > 0) {
-        const [papersRes, experimentsRes, directionsRes] = await Promise.all([
-          supabase
-            .from("papers")
-            .select("id, task_id, title, abstract, summary, created_at")
-            .in("task_id", taskIds)
-            .order("created_at", { ascending: false })
-            .limit(500),
+        const [experimentsRes, directionsRes] = await Promise.all([
           supabase
             .from("experiments")
             .select("id, task_id, paper_id, status, metrics, created_at")
@@ -198,7 +199,6 @@ export async function GET() {
             .order("created_at", { ascending: false })
             .limit(500),
         ])
-        papers = (papersRes.data ?? []) as SupabasePaper[]
         experiments = (experimentsRes.data ?? []) as SupabaseExperiment[]
         directions = (directionsRes.data ?? []) as SupabaseDirection[]
       }
