@@ -156,7 +156,7 @@ export function KnowledgeGraphView({ projectId }: KnowledgeGraphViewProps = {}) 
     return () => clearInterval(interval)
   }, [loading])
 
-  // Measure the graph wrapper so the canvas matches the card; fallback + delayed measure so graph always renders
+  // Measure the graph wrapper so the canvas fills the card and doesn't get cut off
   useEffect(() => {
     const el = wrapperRef.current
     if (!el) return
@@ -170,27 +170,29 @@ export function KnowledgeGraphView({ projectId }: KnowledgeGraphViewProps = {}) 
     }
     measure()
     const raf = requestAnimationFrame(measure)
-    const late = setTimeout(measure, 150)
+    const late = setTimeout(measure, 200)
+    const late2 = setTimeout(measure, 500)
     const observer = new ResizeObserver(measure)
     observer.observe(el)
     return () => {
       cancelAnimationFrame(raf)
       clearTimeout(late)
+      clearTimeout(late2)
       observer.disconnect()
     }
   }, [])
 
-  // Auto-fit to view once the simulation settles so the whole graph is visible
+  // Auto-fit to view once the simulation settles so the whole graph is visible and not cut off
   useEffect(() => {
-    if (!graphData || graphData.nodes.length === 0 || hasAutoFit.current) return
+    if (!graphData || graphData.nodes.length === 0) return
     const timer = setTimeout(() => {
-      if (graphRef.current) {
-        graphRef.current.zoomToFit(500, 80)
+      if (graphRef.current && dimensions.width > 0 && dimensions.height > 0) {
+        graphRef.current.zoomToFit(400, 100)
         hasAutoFit.current = true
       }
-    }, 1500)
+    }, 1200)
     return () => clearTimeout(timer)
-  }, [graphData])
+  }, [graphData, dimensions.width, dimensions.height])
 
   const filteredData = useMemo(() => {
     if (!graphData) return { nodes: [], links: [] }
@@ -409,9 +411,9 @@ export function KnowledgeGraphView({ projectId }: KnowledgeGraphViewProps = {}) 
   }
 
   return (
-    <div className="flex h-full flex-col gap-2">
+    <div className="flex h-full min-h-0 flex-col gap-1.5">
       {/* Toolbar */}
-      <div className="flex flex-wrap items-center gap-2 rounded-md border border-border bg-card/80 px-3 py-2">
+      <div className="flex shrink-0 flex-wrap items-center gap-2 rounded-md border border-border bg-card/80 px-3 py-2">
         <div className="relative min-w-[180px] flex-1 sm:max-w-xs">
           <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
           <Input
@@ -484,7 +486,7 @@ export function KnowledgeGraphView({ projectId }: KnowledgeGraphViewProps = {}) 
       </div>
 
       {/* Stats bar */}
-      <div className="flex flex-wrap items-center gap-4 px-1">
+      <div className="flex shrink-0 flex-wrap items-center gap-4 px-1">
         <span className="font-mono text-[10px] text-muted-foreground">
           {filteredData.nodes.length} nodes
         </span>
@@ -504,10 +506,10 @@ export function KnowledgeGraphView({ projectId }: KnowledgeGraphViewProps = {}) 
         )}
       </div>
 
-      {/* Graph + Detail Panel: min-h ensures the wrapper gets a real size so the graph doesn't clip */}
+      {/* Graph + Detail Panel: use most of viewport height so the graph is big and not cut off */}
       <div
         ref={wrapperRef}
-        className="relative flex min-h-[420px] min-w-0 flex-1 overflow-hidden rounded-lg border border-border bg-muted/20"
+        className="relative flex min-h-[70vh] min-w-0 flex-1 overflow-hidden rounded-lg border border-border bg-muted/20"
       >
         <div ref={containerRef} className="absolute inset-0 size-full">
           {filteredData.nodes.length > 0 && (() => {
@@ -516,7 +518,7 @@ export function KnowledgeGraphView({ projectId }: KnowledgeGraphViewProps = {}) 
             return (
             <ForceGraph2D
               ref={graphRef as React.MutableRefObject<FGMethods | undefined>}
-              width={selectedNode ? w * 0.65 : w}
+              width={w}
               height={h}
               graphData={filteredData}
               nodeId="id"
