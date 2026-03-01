@@ -74,6 +74,25 @@ interface KnowledgeGraphViewProps {
   projectId?: string
 }
 
+const FETCH_TIMEOUT_MS = 35_000
+
+const LOADING_PHASES = [
+  { after: 0, message: "Connecting to API..." },
+  { after: 2, message: "Authenticating and fetching memories..." },
+  { after: 5, message: "Querying Supermemory for stored documents..." },
+  { after: 10, message: "Computing semantic relationships between nodes..." },
+  { after: 18, message: "Building cross-type edges (papers, directions)..." },
+  { after: 25, message: "Assembling final graph — almost there..." },
+]
+
+function getLoadingMessage(elapsedSec: number): string {
+  let msg = LOADING_PHASES[0].message
+  for (const phase of LOADING_PHASES) {
+    if (elapsedSec >= phase.after) msg = phase.message
+  }
+  return msg
+}
+
 export function KnowledgeGraphView({ projectId }: KnowledgeGraphViewProps = {}) {
   const [graphData, setGraphData] = useState<GraphData | null>(null)
   const [loading, setLoading] = useState(true)
@@ -85,40 +104,86 @@ export function KnowledgeGraphView({ projectId }: KnowledgeGraphViewProps = {}) 
   const containerRef = useRef<HTMLDivElement>(null)
   const graphRef = useRef<FGMethods | undefined>(undefined)
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 })
+  const hasAutoFit = useRef(false)
+  const wrapperRef = useRef<HTMLDivElement>(null)
+  const abortRef = useRef<AbortController | null>(null)
+  const [loadingElapsed, setLoadingElapsed] = useState(0)
+  const loadingStartRef = useRef<number>(0)
 
   const fetchGraph = useCallback(async () => {
+    abortRef.current?.abort()
+    const controller = new AbortController()
+    abortRef.current = controller
+    const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS)
+
     setLoading(true)
     setError(null)
+    setLoadingElapsed(0)
+    loadingStartRef.current = Date.now()
+
     try {
-      const res = await fetch("/api/graph")
+      const res = await fetch("/api/graph", { signal: controller.signal })
       if (!res.ok) {
         const body = await res.json().catch(() => ({}))
         throw new Error(body.error || `HTTP ${res.status}`)
       }
       const data: GraphData = await res.json()
       setGraphData(data)
+      hasAutoFit.current = false
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load graph")
+      if ((err as Error).name === "AbortError") {
+        setError("Request timed out — the graph API took too long. Try again or check Supermemory connectivity.")
+      } else {
+        setError(err instanceof Error ? err.message : "Failed to load graph")
+      }
     } finally {
+      clearTimeout(timeout)
       setLoading(false)
+      abortRef.current = null
     }
   }, [])
 
   useEffect(() => {
     fetchGraph()
+    return () => { abortRef.current?.abort() }
   }, [fetchGraph])
 
   useEffect(() => {
-    if (!containerRef.current) return
-    const observer = new ResizeObserver((entries) => {
-      for (const entry of entries) {
-        const { width, height } = entry.contentRect
+    if (!loading) return
+    const interval = setInterval(() => {
+      setLoadingElapsed(Math.floor((Date.now() - loadingStartRef.current) / 1000))
+    }, 500)
+    return () => clearInterval(interval)
+  }, [loading])
+
+  // Measure the outer wrapper (which has a stable size from flex layout)
+  // rather than the inner container (which could collapse when empty)
+  useEffect(() => {
+    const el = wrapperRef.current
+    if (!el) return
+    const measure = () => {
+      const { width, height } = el.getBoundingClientRect()
+      if (width > 0 && height > 0) {
         setDimensions({ width: Math.floor(width), height: Math.floor(height) })
       }
-    })
-    observer.observe(containerRef.current)
+    }
+    measure()
+    const observer = new ResizeObserver(() => measure())
+    observer.observe(el)
     return () => observer.disconnect()
   }, [])
+
+  // Auto-fit to view once the simulation settles after data loads
+  useEffect(() => {
+    if (!graphData || graphData.nodes.length === 0 || hasAutoFit.current) return
+    const timer = setTimeout(() => {
+      if (graphRef.current) {
+        graphRef.current.zoomToFit(400, 60)
+        hasAutoFit.current = true
+      }
+    }, 1500)
+    return () => clearTimeout(timer)
+  }, [graphData])
 
   const filteredData = useMemo(() => {
     if (!graphData) return { nodes: [], links: [] }
@@ -276,11 +341,28 @@ export function KnowledgeGraphView({ projectId }: KnowledgeGraphViewProps = {}) 
   }, [graphData])
 
   if (loading) {
+    const message = getLoadingMessage(loadingElapsed)
     return (
       <div className="flex h-full items-center justify-center">
-        <div className="flex flex-col items-center gap-3">
+        <div className="flex flex-col items-center gap-4 max-w-xs text-center">
           <Loader2 className="h-8 w-8 animate-spin text-primary" />
-          <p className="text-sm text-muted-foreground">Building knowledge graph...</p>
+          <div className="space-y-1.5">
+            <p className="text-sm font-medium text-foreground">Building knowledge graph</p>
+            <p className="text-xs text-muted-foreground animate-pulse">{message}</p>
+            {loadingElapsed > 0 && (
+              <p className="font-mono text-[10px] text-muted-foreground/60 tabular-nums">
+                {loadingElapsed}s elapsed
+              </p>
+            )}
+          </div>
+          {loadingElapsed >= 10 && (
+            <button
+              onClick={() => abortRef.current?.abort()}
+              className="rounded-md border border-border bg-secondary px-3 py-1.5 text-xs text-secondary-foreground transition-colors hover:bg-destructive/20 hover:text-destructive"
+            >
+              Cancel
+            </button>
+          )}
         </div>
       </div>
     )
@@ -410,8 +492,8 @@ export function KnowledgeGraphView({ projectId }: KnowledgeGraphViewProps = {}) 
       </div>
 
       {/* Graph + Detail Panel */}
-      <div className="relative flex flex-1 overflow-hidden rounded-md border border-border">
-        <div ref={containerRef} className="flex-1">
+      <div ref={wrapperRef} className="relative flex min-h-0 flex-1 overflow-hidden rounded-md border border-border">
+        <div ref={containerRef} className="absolute inset-0">
           {dimensions.width > 0 && (
             <ForceGraph2D
               ref={graphRef as React.MutableRefObject<FGMethods | undefined>}
@@ -444,7 +526,7 @@ export function KnowledgeGraphView({ projectId }: KnowledgeGraphViewProps = {}) 
 
         {/* Detail Panel */}
         {selectedNode && (
-          <div className="w-[35%] min-w-[240px] max-w-[360px] border-l border-border bg-card/95 backdrop-blur-sm">
+          <div className="absolute right-0 top-0 z-10 h-full w-[35%] min-w-[240px] max-w-[360px] border-l border-border bg-card/95 backdrop-blur-sm">
             <div className="flex items-center justify-between border-b border-border px-3 py-2">
               <div className="flex items-center gap-2">
                 {(() => {

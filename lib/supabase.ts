@@ -148,32 +148,40 @@ export async function toggleAgentInTeam(agentRowId: string, enabled: boolean): P
   if (error) throw error
 }
 
-// ── Chat history (per-user, stored in Supabase) ─────────────────────────
+// ── Chat history (per-user per-project, stored in Supabase) ──────────────
 
-export async function loadChatHistory(): Promise<unknown[] | null> {
+export async function loadChatHistory(userId: string, projectId: string): Promise<unknown[] | null> {
   const supabase = getSupabase()
   const { data, error } = await supabase
     .from("chat_history")
     .select("messages")
+    .eq("user_id", userId)
+    .eq("project_id", projectId)
     .maybeSingle()
   if (error) throw error
   return (data?.messages as unknown[]) ?? null
 }
 
-export async function saveChatHistory(userId: string, messages: unknown[]): Promise<void> {
+export async function saveChatHistory(userId: string, projectId: string, messages: unknown[]): Promise<void> {
   const supabase = getSupabase()
   const { error } = await supabase
     .from("chat_history")
-    .upsert({ user_id: userId, messages, updated_at: new Date().toISOString() })
+    .upsert({
+      user_id: userId,
+      project_id: projectId,
+      messages,
+      updated_at: new Date().toISOString(),
+    })
   if (error) throw error
 }
 
-export async function clearChatHistory(userId: string): Promise<void> {
+export async function clearChatHistory(userId: string, projectId: string): Promise<void> {
   const supabase = getSupabase()
   const { error } = await supabase
     .from("chat_history")
     .delete()
     .eq("user_id", userId)
+    .eq("project_id", projectId)
   if (error) throw error
 }
 
@@ -233,15 +241,20 @@ export async function fetchAllEvents(limit = 200): Promise<TaskEventRow[]> {
   return (data ?? []).reverse()
 }
 
-export async function fetchPapers(limit = 50): Promise<Paper[]> {
+export async function fetchPapers(
+  page = 0,
+  pageSize = 50,
+): Promise<{ data: Paper[]; total: number }> {
   const supabase = getSupabase()
-  const { data, error } = await supabase
+  const from = page * pageSize
+  const to = from + pageSize - 1
+  const { data, error, count } = await supabase
     .from("papers")
-    .select("*")
+    .select("*", { count: "exact" })
     .order("created_at", { ascending: false })
-    .limit(limit)
+    .range(from, to)
   if (error) throw error
-  return data ?? []
+  return { data: data ?? [], total: count ?? 0 }
 }
 
 export async function fetchExperiments(limit = 50): Promise<Experiment[]> {
@@ -382,50 +395,97 @@ export async function deleteProject(id: string): Promise<void> {
   if (error) throw error
 }
 
-// ── Scoped queries (filter by project_id via its team_id → tasks.team_id) ──
+export async function fetchDashboardStatsForProject(projectId: string): Promise<DashboardStats> {
+  const supabase = getSupabase()
+  const { data: taskRows, error: taskErr } = await supabase
+    .from("tasks")
+    .select("id, status, total_usage")
+    .eq("project_id", projectId)
+  if (taskErr) throw taskErr
+
+  const rows = taskRows ?? []
+  const taskIds = rows.map((t) => t.id)
+
+  let totalTokens = 0
+  let promptTokens = 0
+  let completionTokens = 0
+  let completedTasks = 0
+  for (const t of rows) {
+    const u = t.total_usage as { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number } | null
+    if (u) {
+      totalTokens += u.total_tokens ?? 0
+      promptTokens += u.prompt_tokens ?? 0
+      completionTokens += u.completion_tokens ?? 0
+    }
+    if (t.status === "completed") completedTasks++
+  }
+
+  if (taskIds.length === 0) {
+    return { totalTasks: 0, completedTasks: 0, totalTokens, promptTokens, completionTokens, totalPapers: 0, totalExperiments: 0, totalDirections: 0 }
+  }
+
+  const [papers, experiments, directions] = await Promise.all([
+    supabase.from("papers").select("id", { count: "exact", head: true }).in("task_id", taskIds),
+    supabase.from("experiments").select("id", { count: "exact", head: true }).in("task_id", taskIds),
+    supabase.from("research_directions").select("id", { count: "exact", head: true }).in("task_id", taskIds),
+  ])
+
+  return {
+    totalTasks: rows.length,
+    completedTasks,
+    totalTokens,
+    promptTokens,
+    completionTokens,
+    totalPapers: papers.count ?? 0,
+    totalExperiments: experiments.count ?? 0,
+    totalDirections: directions.count ?? 0,
+  }
+}
+
+// ── Scoped queries (filter by project_id on tasks) ──
 
 export async function fetchTasksForProject(projectId: string, limit = 50): Promise<TaskRow[]> {
-  const project = await fetchProject(projectId)
-  if (!project.team_id) return []
   const supabase = getSupabase()
   const { data, error } = await supabase
     .from("tasks")
     .select("*")
-    .eq("team_id", project.team_id)
+    .eq("project_id", projectId)
     .order("created_at", { ascending: false })
     .limit(limit)
   if (error) throw error
   return data ?? []
 }
 
-export async function fetchPapersForProject(projectId: string, limit = 50): Promise<Paper[]> {
-  const project = await fetchProject(projectId)
-  if (!project.team_id) return []
+export async function fetchPapersForProject(
+  projectId: string,
+  page = 0,
+  pageSize = 50,
+): Promise<{ data: Paper[]; total: number }> {
   const supabase = getSupabase()
   const taskIds = await supabase
     .from("tasks")
     .select("id")
-    .eq("team_id", project.team_id)
+    .eq("project_id", projectId)
   const ids = (taskIds.data ?? []).map((t) => t.id)
-  if (ids.length === 0) return []
-  const { data, error } = await supabase
+  if (ids.length === 0) return { data: [], total: 0 }
+  const from = page * pageSize
+  const to = from + pageSize - 1
+  const { data, error, count } = await supabase
     .from("papers")
-    .select("*")
+    .select("*", { count: "exact" })
     .in("task_id", ids)
     .order("created_at", { ascending: false })
-    .limit(limit)
+    .range(from, to)
   if (error) throw error
-  return data ?? []
+  return { data: data ?? [], total: count ?? 0 }
 }
 
 export async function fetchEventsForProject(projectId: string, limit = 200): Promise<TaskEventRow[]> {
-  const project = await fetchProject(projectId)
-  if (!project.team_id) return []
   const supabase = getSupabase()
   const taskIds = await supabase
     .from("tasks")
     .select("id")
-    .eq("team_id", project.team_id)
+    .eq("project_id", projectId)
   const ids = (taskIds.data ?? []).map((t) => t.id)
   if (ids.length === 0) return []
   const { data, error } = await supabase

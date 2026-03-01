@@ -129,9 +129,16 @@ class BaseAgent:
                         pdf_url=item.get("url", ""),
                     )
             elif tool_name == "modal_sandbox" and isinstance(result, dict):
+                linked_paper_id = None
+                try:
+                    task_papers = db.list_papers(task_id=self.task_id, limit=1)
+                    if task_papers:
+                        linked_paper_id = task_papers[0]["id"]
+                except Exception:
+                    pass
                 db.insert_experiment(
                     task_id=self.task_id,
-                    paper_id=None,
+                    paper_id=linked_paper_id,
                     code="(see tool call)",
                     status="completed" if result.get("exit_code") == 0 else "failed",
                     metrics={"exit_code": result.get("exit_code")},

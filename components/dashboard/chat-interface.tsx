@@ -36,6 +36,7 @@ import {
   Trash2,
   BookOpen,
   Compass,
+  Users,
 } from "lucide-react"
 import { SupermemoryIcon } from "@/components/ui/supermemory-icon"
 import { StatusStepper } from "./status-stepper"
@@ -44,24 +45,12 @@ import { getAgentColor } from "@/lib/simulation-data"
 import { streamResearch, cancelTask, type SwarmEvent } from "@/lib/swarm-client"
 import {
   supabaseConfigured,
-  fetchTasks,
-  fetchTaskEvents,
-  fetchTeams,
   loadChatHistory,
   saveChatHistory,
   clearChatHistory,
-  type TaskEventRow,
-  type Team,
 } from "@/lib/supabase"
 import { createClient as createSupabaseClient } from "@/lib/supabase/client"
 import { useStreaming } from "@/lib/streaming-context"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
 
 // ── Types ─────────────────────────────────────────────────────────────────
 
@@ -100,17 +89,6 @@ function swarmEventToLog(event: SwarmEvent): LogEntry {
     type: event.type === "done" ? "result" : event.type,
     message: event.message,
     meta: event.meta,
-  }
-}
-
-function dbEventToLog(row: TaskEventRow): LogEntry {
-  return {
-    id: row.id,
-    timestamp: formatTime(row.created_at),
-    agent: row.agent_type,
-    type: row.event_type as LogEntry["type"],
-    message: row.message,
-    meta: row.meta as Record<string, unknown> | undefined,
   }
 }
 
@@ -733,16 +711,10 @@ function EventStreamPanel({ events }: { events: LogEntry[] }) {
             </p>
           )}
           {events.map((ev) => {
-            const color =
-              ev.type === "thought" ? "text-chart-3"
-                : ev.type === "action" ? "text-chart-2"
-                : ev.type === "result" ? "text-success"
-                : ev.type === "error" ? "text-destructive"
-                : "text-muted-foreground"
             return (
               <div key={ev.id} className="flex items-start gap-1.5 rounded px-1.5 py-0.5 font-mono text-[10px] hover:bg-secondary/40 transition-colors">
                 <span className="shrink-0 text-muted-foreground/60 tabular-nums">{ev.timestamp}</span>
-                <span className={cn("shrink-0 font-medium", color)}>[{ev.agent}]</span>
+                <span className={cn("shrink-0 font-medium", getAgentColor(ev.agent))}>[{ev.agent}]</span>
                 <span className="text-foreground/60 break-all leading-relaxed">{ev.message.slice(0, 200)}</span>
               </div>
             )
@@ -832,14 +804,13 @@ export function ChatInterface({ fullscreen = false, projectId, teamId }: ChatInt
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [inputValue, setInputValue] = useState("")
   const [isSubmitting, setIsSubmitting] = useState(false)
-  const [teams, setTeams] = useState<Team[]>([])
-  const [selectedTeamId, setSelectedTeamId] = useState<string | null>(teamId ?? null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const abortRef = useRef<AbortController | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
   const activeTaskIdRef = useRef<string | null>(null)
   const activeTaskMsgIdRef = useRef<string | null>(null)
-  const loadedForUserRef = useRef<string | null | undefined>(undefined)
+  const loadedKeyRef = useRef<string | null>(null)
+  const historyLoadedRef = useRef(false)
   const savedToMemoryRef = useRef<Set<string>>(new Set())
   const [memoryEnabled, setMemoryEnabled] = useState(false)
   const [streamStartTime, setStreamStartTime] = useState<number | null>(null)
@@ -861,72 +832,53 @@ export function ChatInterface({ fullscreen = false, projectId, teamId }: ChatInt
     })
   }, [])
 
-  // Sync selectedTeamId when teamId prop changes (project assignment)
-  useEffect(() => {
-    if (teamId) setSelectedTeamId(teamId)
-  }, [teamId])
-
-  useEffect(() => {
-    if (!supabaseConfigured) return
-    fetchTeams().then(setTeams).catch(() => {})
-  }, [])
-
   useEffect(() => {
     if (userId === undefined) return
-    if (loadedForUserRef.current === userId) return
-    loadedForUserRef.current = userId
+    if (!projectId) return
 
-    // Authenticated users: load from Supabase DB (project-specific)
+    const loadKey = `${userId ?? "anon"}:${projectId}`
+    if (loadedKeyRef.current === loadKey) return
+    loadedKeyRef.current = loadKey
+    historyLoadedRef.current = false
+    setMessages([])
+    savedToMemoryRef.current = new Set()
+
+    let stale = false
+
     if (userId && supabaseConfigured) {
-      loadChatHistory()
-        .then(async (dbMessages) => {
+      loadChatHistory(userId, projectId)
+        .then((dbMessages) => {
+          if (stale) return
           if (dbMessages && Array.isArray(dbMessages) && dbMessages.length > 0) {
             const msgs = dbMessages as ChatMessage[]
             for (const m of msgs) {
               if (m.memorySaved) savedToMemoryRef.current.add(m.id)
             }
             setMessages(msgs)
-            return
           }
-
-          // DB empty — try restoring from tasks table (first-time migration)
-          try {
-            const tasks = await fetchTasks(20)
-            const restored: ChatMessage[] = []
-            for (const t of tasks.reverse()) {
-              restored.push({ id: `user-${t.id}`, type: "user", query: t.query, status: "completed", summary: "", events: [], timestamp: formatTime(t.created_at) })
-              let events: LogEntry[] = []
-              try { events = (await fetchTaskEvents(t.id)).map(dbEventToLog) } catch { /* skip */ }
-              restored.push({
-                id: `task-${t.id}`, type: "task", query: t.query, taskId: t.id,
-                status: t.status === "completed" ? "completed" : t.status === "error" ? "error" : "completed",
-                summary: t.merged_answer || extractSummary(events), events, timestamp: formatTime(t.created_at),
-              })
-            }
-            if (restored.length > 0) {
-              setMessages(restored)
-              saveChatHistory(userId, prepareForStorage(restored, 50)).catch(() => {})
-            }
-          } catch { /* skip */ }
+          historyLoadedRef.current = true
         })
-        .catch(() => {})
-      return
+        .catch(() => {
+          if (!stale) historyLoadedRef.current = true
+        })
+      return () => { stale = true }
     }
 
-    // Anonymous / no Supabase: no persisted history available
-  }, [userId])
+    historyLoadedRef.current = true
+  }, [userId, projectId])
 
   // Debounced save to Supabase for authenticated users
   useEffect(() => {
-    if (!userId || !supabaseConfigured) return
+    if (!userId || !projectId || !supabaseConfigured) return
+    if (!historyLoadedRef.current) return
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
     const hasActiveStream = messages.some((m) => m.status === "streaming")
     const delay = hasActiveStream ? 5000 : 500
     saveTimerRef.current = setTimeout(() => {
-      saveChatHistory(userId, prepareForStorage(messages, 50)).catch(() => {})
+      saveChatHistory(userId, projectId, prepareForStorage(messages, 50)).catch(() => {})
     }, delay)
     return () => { if (saveTimerRef.current) clearTimeout(saveTimerRef.current) }
-  }, [messages, userId])
+  }, [messages, userId, projectId])
 
   // Save user messages and completed research tasks to Supermemory
   useEffect(() => {
@@ -1070,7 +1022,7 @@ export function ChatInterface({ fullscreen = false, projectId, teamId }: ChatInt
         })
         setIsSubmitting(false)
       },
-      selectedTeamId ?? teamId ?? undefined,
+      teamId,
       projectId,
     )
   }
@@ -1100,9 +1052,9 @@ export function ChatInterface({ fullscreen = false, projectId, teamId }: ChatInt
     if (isSubmitting) return
     setMessages([])
     savedToMemoryRef.current = new Set()
-    if (userId && supabaseConfigured) {
+    if (userId && projectId && supabaseConfigured) {
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
-      clearChatHistory(userId).catch(() => {})
+      clearChatHistory(userId, projectId).catch(() => {})
     }
   }
 
@@ -1122,14 +1074,11 @@ export function ChatInterface({ fullscreen = false, projectId, teamId }: ChatInt
   const latestTaskGroups = latestTask ? buildAgentGroups(latestTask.events) : []
   const currentStreamEvents = latestTask?.events ?? []
 
-  const teamSelector = !teamId && teams.length > 0 && (
-    <Select value={selectedTeamId ?? "all"} onValueChange={(v) => setSelectedTeamId(v === "all" ? null : v)}>
-      <SelectTrigger className="h-8 min-w-0 flex-1 font-mono text-[11px] sm:w-[180px] sm:flex-initial" size="sm"><SelectValue placeholder="Team" /></SelectTrigger>
-      <SelectContent>
-        <SelectItem value="all" className="font-mono text-xs">All agents (default)</SelectItem>
-        {teams.map((t) => (<SelectItem key={t.id} value={t.id} className="font-mono text-xs">{t.name}</SelectItem>))}
-      </SelectContent>
-    </Select>
+  const teamBadge = teamId && (
+    <Badge variant="outline" className="gap-1 font-mono text-[9px] text-muted-foreground">
+      <Users className="h-3 w-3" />
+      Team linked
+    </Badge>
   )
 
   const inputBar = (
@@ -1207,7 +1156,7 @@ export function ChatInterface({ fullscreen = false, projectId, teamId }: ChatInt
                 Supermemory
               </Badge>
             )}
-            {teamSelector}
+            {teamBadge}
           </div>
         </div>
 
@@ -1243,7 +1192,7 @@ export function ChatInterface({ fullscreen = false, projectId, teamId }: ChatInt
             </Badge>
           )}
         </CardTitle>
-        {teamSelector}
+        {teamBadge}
       </CardHeader>
       <CardContent className="flex min-h-0 flex-1 flex-col overflow-hidden p-0">
         {messageList}

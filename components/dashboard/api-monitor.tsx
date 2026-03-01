@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge"
 import {
   supabaseConfigured,
   fetchDashboardStats,
+  fetchDashboardStatsForProject,
   type DashboardStats,
 } from "@/lib/supabase"
 
@@ -23,11 +24,15 @@ export function ApiMonitor({ projectId, teamId }: ApiMonitorProps = {}) {
   const refresh = useCallback(async () => {
     if (!supabaseConfigured) return
     try {
-      setStats(await fetchDashboardStats())
+      setStats(
+        projectId
+          ? await fetchDashboardStatsForProject(projectId)
+          : await fetchDashboardStats()
+      )
     } catch {
       // keep null
     }
-  }, [])
+  }, [projectId])
 
   useEffect(() => {
     refresh()

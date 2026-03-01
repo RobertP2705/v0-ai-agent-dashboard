@@ -2,13 +2,9 @@
 
 import { useEffect, useState, useCallback } from "react"
 import { createClient } from "@/lib/supabase/client"
+import { fetchProjects } from "@/lib/supabase"
 import { Menu } from "lucide-react"
 import { SidebarNav } from "@/components/dashboard/sidebar-nav"
-import { ChatInterface } from "@/components/dashboard/chat-interface"
-import { AgentStatusGrid } from "@/components/dashboard/agent-status-grid"
-import { KnowledgeGraphView } from "@/components/dashboard/knowledge-graph"
-import { PapersView } from "@/components/dashboard/papers-view"
-import { MeetingRoom } from "@/components/dashboard/meeting-room"
 import { ApiCreditsView } from "@/components/dashboard/api-credits-view"
 import { TeamsView } from "@/components/dashboard/teams-view"
 import { ProjectsLanding } from "@/components/dashboard/projects-landing"
@@ -47,22 +43,6 @@ const viewMeta: Record<string, { title: string; description: string }> = {
     title: "Research Meeting Room",
     description: "Multi-agent discussion with voice synthesis",
   },
-  research: {
-    title: "Research Console",
-    description: "Full-screen research console with live agent monitoring",
-  },
-  "knowledge-graph": {
-    title: "Knowledge Graph",
-    description: "Visualize memories, papers, and connections",
-  },
-  papers: {
-    title: "Papers Library",
-    description: "Browse and search collected research papers",
-  },
-  meeting: {
-    title: "Meeting Room",
-    description: "Multi-agent discussion with voice synthesis",
-  },
   teams: {
     title: "Research Teams",
     description: "Create teams and assign specialized research agents",
@@ -77,25 +57,37 @@ export function DashboardShell() {
   const [activeView, setActiveView] = useState("projects")
   const [selectedProject, setSelectedProject] = useState<ResearchProject | null>(null)
   const [user, setUser] = useState<User | null>(null)
+  const [projects, setProjects] = useState<ResearchProject[]>([])
+  const [projectsLoaded, setProjectsLoaded] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [tourActive, setTourActive] = useState(false)
   const isMobile = useIsMobile()
+
+  const loadProjects = useCallback(async () => {
+    try {
+      const p = await fetchProjects()
+      setProjects(p)
+    } catch {
+      // non-fatal
+    } finally {
+      setProjectsLoaded(true)
+    }
+  }, [])
 
   useEffect(() => {
     const supabase = createClient()
     supabase.auth.getUser().then(({ data: { user } }) => {
       setUser(user)
 
-      // Check if this is a first-time user (no tour_completed flag)
       if (user) {
         const tourKey = `swarm-lab-tour-completed-${user.id}`
         if (!localStorage.getItem(tourKey)) {
-          // Delay tour start slightly so UI renders first
           setTimeout(() => setTourActive(true), 800)
         }
       }
     })
-  }, [])
+    loadProjects()
+  }, [loadProjects])
 
   const handleSelectProject = useCallback((project: ResearchProject | null) => {
     setSelectedProject(project)
@@ -129,6 +121,7 @@ export function DashboardShell() {
       onClose={() => setSidebarOpen(false)}
       inSheet={isMobile}
       onStartTour={handleStartTour}
+      projects={projects}
     />
   )
 
@@ -193,7 +186,12 @@ export function DashboardShell() {
           <div className="flex-1 overflow-auto p-2 sm:p-4">
             {/* Projects landing page */}
             {activeView === "projects" && (
-              <ProjectsLanding onSelectProject={handleSelectProject} />
+              <ProjectsLanding
+                onSelectProject={handleSelectProject}
+                projects={projects}
+                setProjects={setProjects}
+                projectsLoaded={projectsLoaded}
+              />
             )}
 
             {/* Project detail sub-views */}
@@ -205,17 +203,6 @@ export function DashboardShell() {
                 />
               </div>
             )}
-
-            {/* Workspace views (global, unscoped) */}
-            {activeView === "research" && (
-              <div className="flex h-full flex-col gap-4 lg:flex-row">
-                <div className="flex-1"><ChatInterface fullscreen /></div>
-                <div className="w-full lg:w-[340px]"><AgentStatusGrid /></div>
-              </div>
-            )}
-            {activeView === "knowledge-graph" && <KnowledgeGraphView />}
-            {activeView === "papers" && <PapersView />}
-            {activeView === "meeting" && <MeetingRoom />}
 
             {/* Global views */}
             {activeView === "teams" && <TeamsView />}

@@ -16,7 +16,6 @@ import { PapersView } from "@/components/dashboard/papers-view"
 import { KnowledgeGraphView } from "@/components/dashboard/knowledge-graph"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
 import {
   Select,
   SelectContent,
@@ -107,7 +106,7 @@ export function ProjectDetailView({
 
   if (activeSubView === "graph") {
     return (
-      <div className="flex h-full flex-col gap-4">
+      <div className="flex h-full min-h-[500px] flex-col gap-4">
         <ProjectHeader project={project} />
         <div className="min-h-0 flex-1">
           <KnowledgeGraphView projectId={project.id} />
@@ -120,7 +119,7 @@ export function ProjectDetailView({
     return (
       <div className="flex h-full flex-col gap-4">
         <ProjectHeader project={project} />
-        <PapersView projectId={project.id} />
+        <PapersView />
       </div>
     )
   }
@@ -135,26 +134,13 @@ export function ProjectDetailView({
   }
 
   // Default: Overview
+  const currentTeam = teams.find((t) => t.id === project.team_id)
+
   return (
     <div className="flex min-h-full flex-col gap-4">
       <ProjectHeader project={project} />
       <Card className="border-border bg-card/80 backdrop-blur-sm">
         <CardContent className="flex flex-wrap items-center gap-4 py-3">
-          <div className="flex items-center gap-2">
-            <FolderOpen className="h-4 w-4 text-primary" />
-            <span className="text-sm font-medium text-foreground">
-              {project.name}
-            </span>
-          </div>
-          <Badge
-            variant="outline"
-            className={cn(
-              "font-mono text-[9px] capitalize",
-              statusColors[project.status] || statusColors.setup,
-            )}
-          >
-            {project.status}
-          </Badge>
           <div className="flex items-center gap-2">
             <Link2 className="h-3.5 w-3.5 text-muted-foreground" />
             <Select
@@ -177,6 +163,11 @@ export function ProjectDetailView({
               </SelectContent>
             </Select>
           </div>
+          {currentTeam && (
+            <span className="font-mono text-[10px] text-muted-foreground">
+              {currentTeam.team_agents?.filter((a) => a.enabled).length ?? 0} agents configured
+            </span>
+          )}
           {project.description && (
             <p className="w-full font-mono text-[10px] text-muted-foreground">
               {project.description}
@@ -186,12 +177,6 @@ export function ProjectDetailView({
       </Card>
       <AgentStatusGrid projectId={project.id} teamId={project.team_id ?? undefined} />
       <ApiMonitor projectId={project.id} teamId={project.team_id ?? undefined} />
-      <div className="h-[500px] shrink-0">
-        <ChatInterface
-          projectId={project.id}
-          teamId={project.team_id ?? undefined}
-        />
-      </div>
     </div>
   )
 }
@@ -212,12 +197,6 @@ function ProjectHeader({ project }: { project: ResearchProject }) {
       >
         {project.status}
       </Badge>
-      {project.team && typeof project.team === "object" && "name" in project.team && (
-        <Badge variant="outline" className="gap-1 font-mono text-[9px] text-muted-foreground">
-          <Users className="h-3 w-3" />
-          {project.team.name}
-        </Badge>
-      )}
     </div>
   )
 }

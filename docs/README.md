@@ -12,6 +12,6 @@ Docs for the **Swarm Lab — AI Agent Research Dashboard**. Control the number a
 | [AGENTS.md](./AGENTS.md) | Agent types, orchestration, tools, adding agents/tools |
 | [DEVELOPMENT.md](./DEVELOPMENT.md) | Setup, env vars, project layout, API surface, dashboard views |
 
-Database schema is the source of truth in `research_swarm/schema.sql`; RLS policies and migrations are in `scripts/`.
+Database schema is the source of truth in `research_swarm/schema.sql` (9 tables); migrations are in `scripts/` (001–005). Most tables have RLS disabled; `research_projects` has full RLS.
 
 **Quick start for agents**: Read HACKATHON.md, then PROJECT.md, then ARCHITECTURE.md. Use AGENTS.md when modifying the swarm; use DEVELOPMENT.md for setup and deployment.

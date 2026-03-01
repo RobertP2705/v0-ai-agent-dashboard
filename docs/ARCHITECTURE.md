@@ -45,10 +45,11 @@
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │  Supabase (PostgreSQL)                                                      │
 │  Tables: teams, team_agents, tasks, task_events, papers, experiments,      │
-│          research_directions                                                │
+│          research_directions, research_projects, chat_history              │
 │  Auth: Google OAuth, GitHub OAuth, email/password                           │
-│  RLS: All tables scoped by user_id (via team ownership chain)              │
-│  Realtime: Enabled on tasks, task_events                                    │
+│  RLS: research_projects has full RLS; other tables have RLS disabled       │
+│       (migration 004_chat_history_and_task_rls.sql)                        │
+│  Realtime: Enabled on tasks, task_events, research_projects                │
 └─────────────────────────────────────────────────────────────────────────────┘
 
                     ┌─────────────────────┐
@@ -74,6 +75,8 @@
 | Teams (via API) | `/api/teams/*` → Modal `/teams/*` (service role) |
 | Memory status | `GET /api/memory/status` → checks `SUPERMEMORY_API_KEY` |
 | Add memory | `POST /api/memory/add` → Supermemory API (user-scoped container) |
+| Knowledge graph | `GET /api/graph` → Supabase + Supermemory (semantic edges) |
+| TTS | `POST /api/tts` → text-to-speech for Meeting Room |
 | Auth login | `app/auth/login/page.tsx` → Supabase Auth (OAuth + email) |
 | Auth callback | `app/auth/callback/route.ts` → code exchange |
 
@@ -91,7 +94,7 @@
    - `_merge_results()` → synthesized report
    - `db.update_task()` with `merged_answer`, `total_usage`
 4. SSE events stream back: `{task_id, agent, type, message, timestamp}`
-5. `ChatInterface` consumes events, updates UI, persists to Supabase `chat_history` table
+5. `ChatInterface` consumes events, updates UI, persists to Supabase `chat_history` table (per-user per-project)
 6. On completion, result optionally saved to Supermemory via `POST /api/memory/add`
 
 ## Authentication & Authorization
@@ -118,21 +121,24 @@
 | Source | Tables |
 |--------|--------|
 | Modal (`research_swarm/db.py`) | tasks, task_events, papers, experiments, research_directions |
-| Client (`lib/supabase.ts`) | teams, team_agents (CRUD), tasks (read), task_events (read) |
+| Client (`lib/supabase.ts`) | teams, team_agents (CRUD), tasks (read), task_events (read), research_projects (CRUD), chat_history (per-user per-project) |
 | Auth (`Supabase Auth`) | `auth.users` (managed by Supabase) |
 
 Teams are created/edited from the dashboard and stored in Supabase. The Modal backend reads `team_agents` via Supabase service role to know which agents to use for a given `team_id`.
 
-Schema is defined in `research_swarm/schema.sql` (7 tables: teams, team_agents, tasks, task_events, papers, experiments, research_directions).
+Schema is defined in `research_swarm/schema.sql` (9 tables: teams, team_agents, tasks, task_events, papers, experiments, research_directions, research_projects, chat_history).
+
+### Chat History
+
+Chat history is stored per `(user_id, project_id)` in the `chat_history` table. The `loadChatHistory` function filters by **both** `user_id` and `project_id` to prevent cross-user data leakage (important since RLS is disabled on this table). The load effect uses a stale-closure guard to prevent race conditions when switching projects quickly.
 
 ### Row Level Security (RLS)
 
-All tables have RLS enabled. Ownership chain: `auth.users` → `teams.user_id` → everything else via `team_id`.
+Most tables have RLS **disabled** (via migration `004_chat_history_and_task_rls.sql`) for simplicity. The exception is `research_projects`, which has full RLS policies scoping all operations to `auth.uid() = user_id`.
 
-- **teams**: SELECT/INSERT/UPDATE/DELETE where `auth.uid() = user_id`
-- **team_agents**: all ops scoped through parent team ownership
-- **tasks**: SELECT only — must have non-null `team_id` owned by user (migration 003)
-- **task_events, papers, experiments, research_directions**: SELECT only — scoped through parent task → team ownership
+- **research_projects**: Full RLS — SELECT/INSERT/UPDATE/DELETE where `auth.uid() = user_id`
+- **chat_history**: RLS disabled — app-level filtering by `user_id` + `project_id` in queries
+- **teams, team_agents, tasks, task_events, papers, experiments, research_directions**: RLS disabled
 - **Modal backend**: uses service role key, bypasses RLS entirely
 
 ### Migration Scripts (`scripts/`)
@@ -144,7 +150,22 @@ Run in the Supabase SQL editor **in order** after `schema.sql`:
 | `001_add_user_id_to_teams.sql` | Adds `user_id` to teams, index, enables RLS on all tables |
 | `002_delete_legacy_user_agnostic_data.sql` | One-time cleanup of pre-auth data (skip if DB is fresh) |
 | `003_hide_tasks_with_null_team_from_all.sql` | Tightens RLS: tasks must have a team owned by user to be visible |
+| `004_create_research_projects.sql` | Creates `research_projects` table with full RLS, adds `project_id` FK to tasks |
+| `004_chat_history_and_task_rls.sql` | Creates `chat_history` table (single-row-per-user), disables RLS on all tables |
+| `005_chat_history_per_project.sql` | Recreates `chat_history` with composite PK `(user_id, project_id)` for per-project history |
+
+## Knowledge Graph (`/api/graph`)
+
+The knowledge graph visualizes relationships between memories (Supermemory), papers, experiments, directions, and tasks.
+
+1. **Data sources**: Supermemory documents (user-scoped), Supabase tables (papers, experiments, directions, tasks)
+2. **Semantic edges**: Computed server-side by querying Supermemory for similarity between documents. Batched in groups of 8 with per-call timeouts (8s) and a global deadline (25s) to prevent hanging.
+3. **Cross-type edges**: Papers and directions are searched against memories for semantic links.
+4. **Timeouts**: All Supermemory API calls are wrapped with `withTimeout()`. If the deadline is exceeded, the graph is returned with partial edges rather than hanging.
+5. **Client**: `KnowledgeGraphView` uses `react-force-graph-2d` with a 35s client-side fetch timeout, progressive loading messages, and a cancel button.
+
+Built by `lib/graph-utils.ts` (`buildGraphData`) from data fetched in `app/api/graph/route.ts`.
 
 ## Realtime
 
-Supabase Realtime is enabled on `tasks` and `task_events` per `schema.sql`. The dashboard can subscribe for live updates; the chat interface primarily uses SSE from Modal for streaming.
+Supabase Realtime is enabled on `tasks`, `task_events`, and `research_projects` per `schema.sql`. The dashboard can subscribe for live updates; the chat interface primarily uses SSE from Modal for streaming.

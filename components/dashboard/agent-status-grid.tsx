@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { BookOpen, Terminal, Compass, FileText, FlaskConical, Signpost, Plus, Minus, Users } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { supabaseConfigured, fetchDashboardStats, fetchTeams, type DashboardStats, type Team } from "@/lib/supabase"
+import { supabaseConfigured, fetchDashboardStats, fetchDashboardStatsForProject, fetchTeams, type DashboardStats, type Team } from "@/lib/supabase"
 import { fetchAgents, scaleAgent, type SwarmAgent } from "@/lib/swarm-client"
 import type { AgentStatus } from "@/lib/simulation-data"
 import { getStatusColor } from "@/lib/simulation-data"
@@ -94,10 +94,9 @@ export function AgentStatusGrid({ projectId, teamId }: AgentStatusGridProps = {}
   const [agents, setAgents] = useState<SwarmAgent[]>([])
   const [stats, setStats] = useState<DashboardStats | null>(null)
   const [teams, setTeams] = useState<Team[]>([])
-  const [selectedTeamId, setSelectedTeamId] = useState<string | null>(teamId ?? null)
   const { isStreaming, activeAgents } = useStreaming()
 
-  const selectedTeam = teams.find((t) => t.id === selectedTeamId)
+  const selectedTeam = teams.find((t) => t.id === teamId)
 
   function getInstanceCount(agentType: string): number {
     if (!selectedTeam?.team_agents) return 1
@@ -115,7 +114,11 @@ export function AgentStatusGrid({ projectId, teamId }: AgentStatusGridProps = {}
     }
     if (supabaseConfigured) {
       try {
-        setStats(await fetchDashboardStats())
+        setStats(
+          projectId
+            ? await fetchDashboardStatsForProject(projectId)
+            : await fetchDashboardStats()
+        )
       } catch {
         // keep null
       }
@@ -125,7 +128,7 @@ export function AgentStatusGrid({ projectId, teamId }: AgentStatusGridProps = {}
         // keep empty
       }
     }
-  }, [])
+  }, [projectId])
 
   // Poll faster (3s) while streaming, normal (15s) otherwise
   useEffect(() => {
@@ -144,29 +147,6 @@ export function AgentStatusGrid({ projectId, teamId }: AgentStatusGridProps = {}
         </div>
       ) : (
         <>
-          {teams.length > 0 && (
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="font-mono text-[10px] text-muted-foreground">Team:</span>
-              <select
-                value={selectedTeamId ?? ""}
-                onChange={(e) => setSelectedTeamId(e.target.value || null)}
-                className="h-7 rounded border border-border bg-secondary px-2 font-mono text-[11px] text-foreground"
-              >
-                <option value="">Default (1 each)</option>
-                {teams.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.name}
-                  </option>
-                ))}
-              </select>
-              {selectedTeam && (
-                <span className="font-mono text-[10px] text-muted-foreground">
-                  — scale agents with +/- buttons
-                </span>
-              )}
-            </div>
-          )}
-
           <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
             {agents.map((agent) => {
               const Icon = agentIcons[agent.id] || BookOpen

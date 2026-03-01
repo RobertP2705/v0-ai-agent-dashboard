@@ -4,7 +4,7 @@ import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { cn } from "@/lib/utils"
 import { createClient } from "@/lib/supabase/client"
-import { fetchProjects, type ResearchProject } from "@/lib/supabase"
+import type { ResearchProject } from "@/lib/supabase"
 import {
   LayoutGrid,
   MessageSquare,
@@ -40,14 +40,6 @@ const projectSubNav = [
   { id: "project-meeting", label: "Meeting Room", icon: MessageSquare },
 ]
 
-// Top-level workspace views (always visible, unscoped)
-const workspaceNav = [
-  { id: "research", label: "Research", icon: Activity },
-  { id: "knowledge-graph", label: "Knowledge Graph", icon: Network },
-  { id: "papers", label: "Papers Library", icon: BookOpen },
-  { id: "meeting", label: "Meeting Room", icon: MessageSquare },
-]
-
 // Global navigation items (always visible)
 const globalNav = [
   { id: "teams", label: "Teams", icon: Users },
@@ -65,6 +57,8 @@ interface SidebarNavProps {
   inSheet?: boolean
   /** Trigger the onboarding tour */
   onStartTour?: () => void
+  /** Shared projects list from parent */
+  projects: ResearchProject[]
 }
 
 export function SidebarNav({
@@ -75,9 +69,9 @@ export function SidebarNav({
   onClose,
   inSheet,
   onStartTour,
+  projects,
 }: SidebarNavProps) {
   const [user, setUser] = useState<User | null>(null)
-  const [projects, setProjects] = useState<ResearchProject[]>([])
   const router = useRouter()
 
   useEffect(() => {
@@ -85,24 +79,7 @@ export function SidebarNav({
     supabase.auth.getUser().then(({ data: { user } }) => {
       setUser(user)
     })
-    loadProjects()
   }, [])
-
-  async function loadProjects() {
-    try {
-      const p = await fetchProjects()
-      setProjects(p)
-    } catch {
-      // non-fatal
-    }
-  }
-
-  // Refresh project list when returning to projects landing
-  useEffect(() => {
-    if (activeView === "projects" && !selectedProjectId) {
-      loadProjects()
-    }
-  }, [activeView, selectedProjectId])
 
   const handleSignOut = async () => {
     const supabase = createClient()
@@ -238,36 +215,6 @@ export function SidebarNav({
             )}
           </>
         )}
-
-        {/* Separator */}
-        <div className="my-2 border-t border-border" />
-
-        {/* Workspace views */}
-        <p className="mb-1 px-2 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-          Workspace
-        </p>
-        {workspaceNav.map((item) => {
-          const Icon = item.icon
-          const isActive = activeView === item.id
-          return (
-            <button
-              key={item.id}
-              onClick={() => {
-                onViewChange(item.id)
-                onClose?.()
-              }}
-              className={cn(
-                "flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm transition-colors",
-                isActive
-                  ? "bg-sidebar-accent font-medium text-primary"
-                  : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground",
-              )}
-            >
-              <Icon className="h-4 w-4 shrink-0" />
-              {item.label}
-            </button>
-          )
-        })}
 
         {/* Separator */}
         <div className="my-2 border-t border-border" />

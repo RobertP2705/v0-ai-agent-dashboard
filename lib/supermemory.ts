@@ -71,6 +71,48 @@ export async function listDocuments({
   return response
 }
 
+export interface ListAllDocumentsOptions {
+  containerTags: string[]
+  maxDocuments?: number
+  pageSize?: number
+  includeContent?: boolean
+}
+
+/**
+ * Paginate through all Supermemory documents instead of fetching only page 1.
+ * Stops when a page returns fewer results than pageSize or maxDocuments is reached.
+ */
+export async function listAllDocuments({
+  containerTags,
+  maxDocuments = 500,
+  pageSize = 100,
+  includeContent = false,
+}: ListAllDocumentsOptions) {
+  const client = getClient()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const allMemories: any[] = []
+  let page = 1
+
+  while (allMemories.length < maxDocuments) {
+    const response = await client.documents.list({
+      containerTags,
+      limit: pageSize,
+      page,
+      includeContent,
+      sort: "createdAt",
+      order: "desc",
+    })
+
+    const memories = response.memories ?? []
+    allMemories.push(...memories)
+
+    if (memories.length < pageSize) break
+    page++
+  }
+
+  return { memories: allMemories.slice(0, maxDocuments) }
+}
+
 export interface SearchMemoriesWithScoreOptions {
   q: string
   containerTag: string

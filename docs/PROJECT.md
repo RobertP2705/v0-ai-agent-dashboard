@@ -12,11 +12,13 @@ Users create research teams, assign specialized agents to each team, and submit 
 
 | Concept | Description |
 |---------|-------------|
+| **Project** | A research project scoped to a user. Each project has its own chat history, papers, and can be linked to a team. Projects organize long-running research efforts. |
 | **Team** | A named group of enabled agents. Tasks can run with a team (subset of agents) or "all agents" (default). User-scoped via Supabase Auth. |
 | **Agent** | A specialized worker with distinct tools and prompts. Agents run sequentially per task; the triage model picks which ones participate. |
 | **Task** | A single research query execution: triage → fan-out to agents → merge results. Streamed via SSE. |
 | **Swarm** | The collective of all available agents; task routing determines which subset runs. |
 | **Memory** | Optional Supermemory integration. Completed research is saved to user-scoped memory containers and recalled as context for future queries. |
+| **Knowledge Graph** | Visual map of relationships between memories, papers, experiments, and research directions. Semantic edges are computed via Supermemory similarity search. |
 
 ## High-Level Flow
 
@@ -36,7 +38,7 @@ Users create research teams, assign specialized agents to each team, and submit 
 |-------|-----------|
 | **Frontend** | Next.js 16, React 19, Tailwind CSS v4, Radix UI (shadcn/ui) |
 | **Backend** | Modal (Python) — FastAPI API + vLLM Qwen3-32B on A100-80GB |
-| **Database** | Supabase (PostgreSQL) with Row Level Security — teams, tasks, events, papers, experiments, directions |
+| **Database** | Supabase (PostgreSQL) — teams, tasks, events, papers, experiments, directions, research_projects, chat_history |
 | **Auth** | Supabase Auth — Google OAuth, GitHub OAuth, email/password. SSR session management via `@supabase/ssr`. |
 | **Memory** | Supermemory (optional) — user-scoped AI memory containers for cross-session context |
 | **Secrets** | Modal secrets (HuggingFace, search APIs, Supabase service role) |
@@ -48,8 +50,10 @@ Users create research teams, assign specialized agents to each team, and submit 
 
 | View | Component | What it shows |
 |------|-----------|---------------|
+| **Projects** | `ProjectsLanding`, `ProjectDetailView` | Create/manage research projects with per-project chat, papers, and graph |
 | **Overview** | `AgentStatusGrid`, `ApiMonitor` | Agent status cards (idle/busy/error), API usage metrics |
 | **Research Console** | `ChatInterface` | Query input, SSE streaming, event log, pipeline stepper, team selector, memory context |
+| **Knowledge Graph** | `KnowledgeGraphView` | Force-directed graph of memories, papers, experiments, directions with semantic edges |
 | **Teams** | `TeamsView`, `TeamCard`, `AgentPicker` | Create/edit/delete teams, assign and toggle agents |
 | **Meeting Room** | `MeetingRoom` | Multi-agent discussion with voice synthesis (TTS) |
 | **Credits** | `ApiCreditsView` | API keys, endpoints, token usage, cost tracking |
